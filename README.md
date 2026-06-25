@@ -38,6 +38,16 @@ component set. The MDX is therefore docs-framework-flavored (frontmatter +
 `<LedgerSchema>`, `<DocCallout>`, …); the library stores it but does not compile
 it.
 
+### Display order
+
+`meta.order` (a unique positive integer, required) is the **single source of
+truth for display order**. The studio gallery sorts templates by it ascending
+(its codegen emits the registry in `meta.order` order), and the docs site
+**injects** it into the matching cookbook page's frontmatter at sync time — so
+the MDX must **not** hand-declare `order:` (the validator rejects it). Both
+products therefore order templates identically, and reordering is a one-line
+edit to a schema. Renumber deliberately; `pnpm validate` enforces uniqueness.
+
 ## Tooling
 
 - `pnpm validate` — validate every template against the canonical schema and the

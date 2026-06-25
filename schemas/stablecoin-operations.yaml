@@ -1,7 +1,8 @@
 # yaml-language-server: $schema=./ledger-schema.schema.json
 meta:
   slug: stablecoin-operations
-  name: "Stablecoin Operations"
+  order: 5
+  name: "Stablecoin On-Ramp & Off-Ramp Operations"
   description: "Onramp/offramp business: PSP fiat ↔ stablecoin via pivot accounts, with circulation tracking."
   tags:
     - "stablecoin"

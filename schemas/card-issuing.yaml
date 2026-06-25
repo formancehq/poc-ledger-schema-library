@@ -1,6 +1,7 @@
 # yaml-language-server: $schema=./ledger-schema.schema.json
 meta:
   slug: card-issuing
+  order: 8
   name: "Card Issuing"
   description: "Auth-to-settlement lifecycle with a daily three-way match."
   tags:

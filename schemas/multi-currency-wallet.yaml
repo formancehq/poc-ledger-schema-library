@@ -1,6 +1,7 @@
 # yaml-language-server: $schema=./ledger-schema.schema.json
 meta:
   slug: multi-currency-wallet
+  order: 14
   name: "Multi-currency Wallet"
   description: "Per-user multi-asset wallets with an exchange liquidity pool."
   tags:

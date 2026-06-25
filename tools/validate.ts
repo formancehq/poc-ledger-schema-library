@@ -1,8 +1,10 @@
 /**
  * Validates every schemas/*.yaml against the canonical JSON Schema and asserts
- * the SSOT invariants: filename === meta.slug, unique slugs, parseable YAML, and
- * every meta.docsUrl resolves to a real docs page (a docs/**\/*.mdx whose
- * frontmatter `path:` matches the URL — no dead "Documentation" links).
+ * the SSOT invariants: filename === meta.slug, unique slugs, unique meta.order,
+ * parseable YAML, every meta.docsUrl resolves to a real docs page (a
+ * docs/**\/*.mdx whose frontmatter `path:` matches the URL — no dead
+ * "Documentation" links), and no docs page hand-declares `order:` (display
+ * order lives only in meta.order and is injected into the docs at sync time).
  * Exits non-zero on any failure. Run in CI.
  */
 import { readFileSync, readdirSync, existsSync } from "node:fs";
@@ -21,20 +23,27 @@ const ajv = new Ajv({ allErrors: true, strict: false });
 const validate = ajv.compile(schema);
 
 // Paths declared by the library's own docs pages, keyed off MDX frontmatter
-// `path:` — a docsUrl is only valid if it points at one of these.
+// `path:` — a docsUrl is only valid if it points at one of these. Display order
+// must NOT be hand-declared in the MDX: it lives in meta.order and is injected
+// into the docs frontmatter at sync time, so a stray `order:` here would drift.
 const docsPagePaths = new Set<string>();
+let failures = 0;
 if (existsSync(DOCS_DIR)) {
   for (const rel of readdirSync(DOCS_DIR, { recursive: true })) {
     if (typeof rel !== "string" || !rel.endsWith(".mdx")) continue;
     const frontmatter = readFileSync(join(DOCS_DIR, rel), "utf8").match(/^---\n([\s\S]*?)\n---/);
-    const path = frontmatter ? (yamlLoad(frontmatter[1]) as { path?: string })?.path : undefined;
-    if (path) docsPagePaths.add(path);
+    const fm = frontmatter ? (yamlLoad(frontmatter[1]) as { path?: string; order?: number }) : undefined;
+    if (fm?.path) docsPagePaths.add(fm.path);
+    if (fm?.order !== undefined) {
+      console.error(`✗ docs/${rel}: frontmatter must not declare order: (it is injected from the schema's meta.order at sync time)`);
+      failures++;
+    }
   }
 }
 
 const files = readdirSync(SCHEMAS_DIR).filter((f) => f.endsWith(".yaml"));
 const slugs = new Set<string>();
-let failures = 0;
+const orders = new Map<number, string>();
 
 for (const file of files) {
   const slug = file.replace(/\.yaml$/, "");
@@ -48,7 +57,7 @@ for (const file of files) {
     continue;
   }
 
-  const doc = data as { meta?: { slug?: string; docsUrl?: string } };
+  const doc = data as { meta?: { slug?: string; order?: number; docsUrl?: string } };
   if (doc?.meta?.slug !== slug) {
     console.error(`✗ ${file}: meta.slug (${doc?.meta?.slug}) !== filename (${slug})`);
     failures++;
@@ -58,6 +67,17 @@ for (const file of files) {
     failures++;
   }
   slugs.add(slug);
+
+  const order = doc?.meta?.order;
+  if (typeof order === "number") {
+    const owner = orders.get(order);
+    if (owner) {
+      console.error(`✗ ${file}: duplicate meta.order ${order} (also used by ${owner})`);
+      failures++;
+    } else {
+      orders.set(order, file);
+    }
+  }
 
   const docsUrl = doc?.meta?.docsUrl;
   if (docsUrl !== undefined) {

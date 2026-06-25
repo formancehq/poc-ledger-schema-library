@@ -1,7 +1,8 @@
 # yaml-language-server: $schema=./ledger-schema.schema.json
 meta:
   slug: omnibus
-  name: "Omnibus / FBO"
+  order: 2
+  name: "Omnibus Account Management"
   description: "Single omnibus bank account with per-client sub-balances."
   tags:
     - "omnibus"

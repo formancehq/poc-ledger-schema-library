@@ -1,7 +1,8 @@
 # yaml-language-server: $schema=./ledger-schema.schema.json
 meta:
   slug: issuing-financial-host
-  name: "Issuing / Financial Host"
+  order: 4
+  name: "Card Issuing & Financial Host"
   description: "Card issuing as a financial host: auth, settlement, and scheme position."
   tags:
     - "issuing"

@@ -1,7 +1,8 @@
 # yaml-language-server: $schema=./ledger-schema.schema.json
 meta:
   slug: payment-acceptance
-  name: "Payment Acceptance"
+  order: 3
+  name: "Payment Card Acceptance Processing"
   description: "PSP capture, fees, and settlement into the merchant balance."
   tags:
     - "payments"

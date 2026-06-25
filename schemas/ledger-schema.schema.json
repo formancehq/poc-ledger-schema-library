@@ -28,13 +28,18 @@
   "$defs": {
     "meta": {
       "type": "object",
-      "required": ["slug", "name"],
+      "required": ["slug", "order", "name"],
       "additionalProperties": false,
       "properties": {
         "slug": {
           "type": "string",
           "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
           "description": "Kebab-case identifier. MUST equal the filename (without extension) — it is the docs `<LedgerSchema schema=\"…\"/>` lookup key and the studio gallery slug."
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Single source of truth for display order. The studio gallery sorts templates by it (ascending), and the docs site injects it into the matching cookbook page's frontmatter at sync time so both products order templates identically. MUST be unique across templates (enforced by tools/validate.ts)."
         },
         "name": {
           "type": "string",

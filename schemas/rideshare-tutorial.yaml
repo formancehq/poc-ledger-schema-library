@@ -1,7 +1,8 @@
 # yaml-language-server: $schema=./ledger-schema.schema.json
 meta:
   slug: rideshare-tutorial
-  name: "Rideshare (Tutorial)"
+  order: 1
+  name: "RideShare Tutorial"
   description: "Tutorial marketplace: rider charge, driver earnings, platform fee."
   tags:
     - "tutorial"
