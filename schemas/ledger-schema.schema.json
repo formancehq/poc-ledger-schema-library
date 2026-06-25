@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/formancehq/poc-ledger-schema-library/schemas/ledger-schema.schema.json",
+  "title": "Formance Ledger schema (meta + chart + transactions + queries)",
+  "description": "Canonical schema for the ledger-schema templates in poc-ledger-schema-library. Each template is a self-contained YAML file carrying gallery metadata (`meta`), the chart-of-accounts tree, named transactions (each a Numscript snippet plus optional interpreter + feature-flag declarations), and reusable queries. This is the single source of truth consumed by both the platform-ui studio and the docs site.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "$ref": "#/$defs/meta",
+      "description": "Gallery metadata for the template. Consumed by the studio template gallery; ignored by the docs viewer and the Numscript validator."
+    },
+    "chart": {
+      "$ref": "#/$defs/chartNode",
+      "description": "Hierarchy of account templates. Each leaf includes a `.self: {}` marker; templated keys (start with `$`) describe variable account name segments."
+    },
+    "transactions": {
+      "type": "object",
+      "description": "Named transaction patterns. Each value contains a description and a `script` block in Numscript.",
+      "additionalProperties": { "$ref": "#/$defs/transaction" }
+    },
+    "queries": {
+      "type": "object",
+      "description": "Named query patterns rendered as runnable API calls.",
+      "additionalProperties": { "$ref": "#/$defs/query" }
+    }
+  },
+  "$defs": {
+    "meta": {
+      "type": "object",
+      "required": ["slug", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "slug": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "description": "Kebab-case identifier. MUST equal the filename (without extension) — it is the docs `<LedgerSchema schema=\"…\"/>` lookup key and the studio gallery slug."
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable display name shown in the studio gallery."
+        },
+        "description": {
+          "type": "string",
+          "description": "One-line pitch shown in the studio gallery."
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "description": "Category tags for filtering in the gallery."
+        }
+      }
+    },
+    "chartNode": {
+      "description": "Tree of account-name segments. Reserved keys: `.self`, `.metadata`, `.pattern`, `.rules`. Any other key is a literal account segment or a templated `$variable` whose value is a nested node (object) or a leaf (null).",
+      "type": "object",
+      "properties": {
+        ".self": {
+          "type": "object",
+          "description": "Marks this node as itself a bookable account (in addition to having children). Conventionally `{}`."
+        },
+        ".pattern": {
+          "type": "string",
+          "description": "Regex constraining the value of a templated `$segment`."
+        },
+        ".metadata": {
+          "type": "object",
+          "description": "Default metadata applied to accounts matching this node. Each field is an object, conventionally `{ \"default\": <value> }`.",
+          "additionalProperties": {
+            "type": "object",
+            "properties": { "default": {} },
+            "additionalProperties": true
+          }
+        },
+        ".rules": {
+          "type": "object",
+          "description": "Account rules attached to this node (reserved; mirrors the platform-ui V2 chart schema)."
+        }
+      },
+      "additionalProperties": {
+        "anyOf": [
+          { "$ref": "#/$defs/chartNode" },
+          { "type": "null" }
+        ]
+      }
+    },
+    "transaction": {
+      "type": "object",
+      "required": ["script"],
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Human-readable explanation of when this transaction fires."
+        },
+        "script": {
+          "type": "string",
+          "description": "The Numscript program. Validated at build time; must parse and (when fixtures are provided) run cleanly."
+        },
+        "interpreter": {
+          "type": "string",
+          "enum": ["machine", "experimental"],
+          "description": "Target interpreter. When omitted the validator infers it from the script content. Setting this explicitly is recommended when the snippet runs on the machine interpreter on purpose and must NOT regress."
+        },
+        "featureFlags": {
+          "type": "array",
+          "description": "Feature flags the experimental interpreter needs. Must be the canonical ids from github.com/formancehq/numscript/internal/flags/flags.go.",
+          "items": {
+            "type": "string",
+            "enum": [
+              "experimental-overdraft-function",
+              "experimental-get-asset-function",
+              "experimental-get-amount-function",
+              "experimental-oneof",
+              "experimental-account-interpolation",
+              "experimental-mid-script-function-call",
+              "experimental-asset-colors",
+              "experimental-asset-scaling"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "input": {
+          "type": "string",
+          "description": "Reference into the sibling `numscript-fixtures.yaml` to use as the validation/playground fixture."
+        }
+      }
+    },
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Optional display label for the query."
+        },
+        "description": { "type": "string" },
+        "resource": {
+          "type": "string",
+          "enum": ["accounts", "volumes", "transactions", "balances", "logs"]
+        },
+        "vars": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": { "type": { "type": "string" } },
+            "additionalProperties": true
+          }
+        },
+        "params": { "type": "object" },
+        "body": { "type": "object" }
+      }
+    }
+  }
+}

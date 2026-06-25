@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=./ledger-schema.schema.json
+meta:
+  slug: ecommerce-platform
+  name: "E-commerce Platform"
+  description: "Order capture, marketplace split, and seller payouts."
+  tags:
+    - "ecommerce"
+    - "marketplace"
+    - "payouts"
+chart:
+  customers:
+    $customer_id:
+      .pattern: '^[a-zA-Z0-9_-]+$'
+      wallet:
+        .self: {}
+        .metadata:
+          type:
+            default: "customer_wallet"
+
+  merchants:
+    $merchant_id:
+      .pattern: '^[a-zA-Z0-9_-]+$'
+      earnings:
+        .self: {}
+      settlements:
+        .self: {}
+
+  orders:
+    $order_id:
+      .pattern: '^[a-zA-Z0-9_-]+$'
+      pending:
+        .self: {}
+      captured:
+        .self: {}
+
+  platform:
+    fees:
+      .self: {}
+    taxes:
+      vat:
+        .self: {}
+    refunds:
+      pool:
+        .self: {}

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://docs.formance.com/schemas/numscript-fixtures.schema.json",
+  "title": "Numscript fixture library",
+  "description": "Named fixtures consumed by the docs Numscript validator and playground-link generator. Snippets reference an entry via `{input: \"<key>\"}` on their fence info string.",
+  "type": "object",
+  "required": ["fixtures"],
+  "additionalProperties": false,
+  "properties": {
+    "fixtures": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/fixture" }
+    }
+  },
+  "$defs": {
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Short blurb shown in the backoffice fixture list."
+        },
+        "variables": {
+          "type": "object",
+          "description": "Variable values for the snippet's `vars { … }` block. Keys are variable names without the `$` prefix; values are stringified per the playground API contract.",
+          "additionalProperties": { "type": "string" }
+        },
+        "balances": {
+          "type": "object",
+          "description": "Per-account starting balances. Outer key is the account name (no `@`); inner map is asset → integer units.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Per-account metadata to seed the engine with. Outer key is the account name; inner map is key → string value.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

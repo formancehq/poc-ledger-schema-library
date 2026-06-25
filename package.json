@@ -1,0 +1,17 @@
+{
+  "name": "@formance/ledger-schema-library",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Single source of truth for Formance ledger-schema templates (chart of accounts + Numscript transactions + queries), consumed by the platform-ui studio and the docs site.",
+  "scripts": {
+    "validate": "tsx tools/validate.ts",
+    "render": "tsx tools/render-md.ts"
+  },
+  "devDependencies": {
+    "ajv": "^8.18.0",
+    "js-yaml": "^4.1.0",
+    "tsx": "^4.19.0",
+    "@types/js-yaml": "^4.0.9"
+  }
+}

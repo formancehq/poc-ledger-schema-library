@@ -1,0 +1,138 @@
+# yaml-language-server: $schema=./schemas/numscript-fixtures.schema.json
+#
+# Named fixtures for Numscript snippet validation + playground links.
+#
+# Each entry under `fixtures:` provides a `{variables, balances,
+# metadata}` bundle. Snippets reference an entry by key via the fence
+# info-string:
+#
+#     ```numscript {input: "baas-end-user-deposit"}
+#     send …
+#     ```
+#
+# When a snippet doesn't declare an `input:` key, the validator
+# synthesises defaults from the script's `vars { … }` block (see
+# packages/numscript-engine/src/fixtures.ts). Fixtures here exist for
+# snippets where the synthesised default isn't expressive enough — most
+# commonly when:
+#
+#   - the script uses `meta()` and the metadata graph must be wired up,
+#   - the script reads from accounts that need a specific starting balance,
+#   - the playground link should land the reader on something
+#     reader-friendly (a 100k EUR balance rather than 1 unit).
+#
+# Fixtures are referenced from the docs build report + from the
+# in-page "Open in playground" buttons.
+
+fixtures:
+  # ── Mise en place: foundational scenarios ─────────────────────
+
+  omnibus-client-deposit:
+    description: Standard omnibus pattern — sponsor bank pre-funded with 5M USD.
+    variables:
+      asset: "USD/2"
+      amount: "10000"
+      bank_id: "bofa"
+      client_id: "alice"
+      reference: "wire-001"
+    balances:
+      banks:bofa:main:
+        USD/2: 5000000
+
+  omnibus-suspense-resolution:
+    description: Move funds from suspense to identified client.
+    variables:
+      asset: "USD/2"
+      amount: "10000"
+      platform_name: "primary"
+      client_id: "alice"
+      reference: "wire-001"
+    balances:
+      platform:primary:suspense:payin:
+        USD/2: 100000
+
+  # ── BaaS recipe ───────────────────────────────────────────────
+
+  baas-onboarding:
+    description: Open a tenant program register with a 50k reserve.
+    variables:
+      tenant_id: "acme"
+      initial_reserve: "USD/2 5000000"
+    balances:
+      world:
+        USD/2: 100000000
+
+  baas-end-user-deposit:
+    description: End-user deposit into a tenant-scoped account.
+    variables:
+      tenant_id: "acme"
+      user_id: "u-123"
+      amount: "USD/2 50000"
+    balances:
+      sponsor:bank_a:main:
+        USD/2: 1000000000
+
+  # ── Payment acceptance recipe ─────────────────────────────────
+
+  payment-acceptance-auth:
+    description: Card authorization gross top-up against pre-funded acquirer.
+    variables:
+      asset: "USD/2"
+      amount: "20000"
+      acquirer_id: "stripe"
+      client_id: "alice"
+      platform_name: "primary"
+      authorization_id: "auth-001"
+    balances:
+      acquirers:stripe:main:
+        USD/2: 100000000
+
+  payment-acceptance-settlement:
+    description: Acquirer net settlement (gross - fees) into bank.
+    variables:
+      asset: "USD/2"
+      net_amount: "98000"
+      fee_amount: "2000"
+      acquirer_id: "stripe"
+      bank_id: "bofa"
+      platform_name: "primary"
+      settlement_ref: "set-001"
+    balances:
+      banks:bofa:main:
+        USD/2: 1000000000
+      platform:primary:fees:
+        USD/2: 1000000
+
+  # ── Insurance recipe ──────────────────────────────────────────
+
+  insurance-premium-bound:
+    description: Policyholder pays an annual premium up front.
+    variables:
+      policyholder: "ph:alice"
+      policy_id: "pol-001"
+      annual_premium: "USD/2 120000"
+    balances:
+      ph:alice:
+        USD/2: 1000000
+
+  # ── Token swap (multi-currency) ───────────────────────────────
+
+  token-swap-eur-usd:
+    description: Convert 1000 EUR to USD via pivot at 1.10 rate.
+    variables:
+      user_id: "u-123"
+      eur_amount: "EUR/2 100000"
+      usd_amount: "USD/2 110000"
+    balances:
+      users:u-123:eur:
+        EUR/2: 1000000
+
+  # ── Generic high-balance world (catch-all for playground links) ──
+
+  generic:
+    description: 1B units of USD/2, EUR/2, BTC/8 in @world for ad-hoc demos.
+    balances:
+      world:
+        USD/2: 100000000000
+        EUR/2: 100000000000
+        BTC/8: 10000000000

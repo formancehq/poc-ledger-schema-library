@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=./ledger-schema.schema.json
+meta:
+  slug: multi-currency-wallet
+  name: "Multi-currency Wallet"
+  description: "Per-user multi-asset wallets with an exchange liquidity pool."
+  tags:
+    - "wallet"
+    - "fx"
+    - "multi-currency"
+chart:
+  users:
+    $user_id:
+      .pattern: '^[a-zA-Z0-9_-]+$'
+      wallet:
+        USD:
+          .self: {}
+        EUR:
+          .self: {}
+        BTC:
+          .self: {}
+
+  exchange:
+    liquidity:
+      USD:
+        .self: {}
+      EUR:
+        .self: {}
+    fees:
+      .self: {}
