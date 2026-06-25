@@ -1,0 +1,114 @@
+---
+path: /examples/advanced/omnibus
+title: "Omnibus Account Management"
+section: Cookbook
+order: 2
+---
+
+import { DocCallout, DocCard, DocCardGroup, DocSteps, DocStep, DocTabs, DocTab } from "@formance/docs-framework"
+
+This example shows how to implement omnibus account patterns in Formance using a declarative ledger schema. An omnibus account is a pooled account held at a financial institution that aggregates assets belonging to multiple end-users — the assets represent **liabilities** to your clients.
+
+**Common use cases:**
+- **Banking services** holding pooled client funds in a single settlement account
+- **Financial markets** managing custodial accounts on behalf of investors
+- **Crypto platforms** with fiat reserve management across banking partners
+
+<DocCallout type="info">
+This is an illustrative example. Adapt the schema to your specific business requirements, regulatory obligations, and financial practices.
+</DocCallout>
+
+## The Complete Schema
+
+This is the full ledger schema for an omnibus account system. The sections below explain each part.
+
+<LedgerSchema schema="omnibus" />
+
+## Chart of Accounts
+
+The `chart` section defines three account groups using standard correspondent banking terminology. **Nostro** ("ours") accounts represent assets you hold at partner institutions. **Vostro** ("yours") accounts represent liabilities — funds clients hold with you.
+
+### Banks (Nostro Accounts)
+
+<LedgerSchema schema="omnibus" chart="banks" />
+
+These are **normal debit accounts** — they represent your assets held at partner banks. The `$bank_id` is typically an IBAN (`FR7630004028379876543210943`) or routing:account format (`021000089:123456789`).
+
+The `payout` sub-accounts isolate each withdrawal as a separate staging area, so you can track the lifecycle of each payout independently.
+
+### Clients (Vostro Accounts)
+
+<LedgerSchema schema="omnibus" chart="clients" />
+
+**Normal credit accounts** — they represent your liabilities to clients. The credit balance shows funds you owe them.
+
+### Platform
+
+<LedgerSchema schema="omnibus" chart="platform" />
+
+**Mixed nature accounts** — operational accounts for suspense handling, revenue, and costs. Suspense accounts are normal debit (assets awaiting attribution); revenue and cost accounts follow standard income statement conventions.
+
+## Transaction Patterns
+
+### Client Deposit
+
+The `CLIENT_DEPOSIT` transaction records an identified deposit. The `allowing unbounded overdraft` clause on the bank account permits it to go negative — this accommodates the common case where ledger entries are recorded before bank statement reconciliation.
+
+<LedgerSchema schema="omnibus" tx="CLIENT_DEPOSIT" />
+
+<DocCallout type="info">
+This pattern works for any currency. Pass `EUR/2`, `USD/2`, or any asset in [Universal Monetary Notation](/modules/numscript/monetary-notation).
+</DocCallout>
+
+### Unidentified Deposit
+
+When funds arrive but you can't identify the client (missing reference, intermediary payment, etc.), `UNIDENTIFIED_DEPOSIT` parks the funds in a suspense account. You cannot refuse incoming funds to an omnibus account — always book immediately.
+
+<LedgerSchema schema="omnibus" tx="UNIDENTIFIED_DEPOSIT" />
+
+Once the client is identified, `SUSPENSE_RESOLUTION` moves the funds from suspense to the correct client account.
+
+<LedgerSchema schema="omnibus" tx="SUSPENSE_RESOLUTION" />
+
+<DocCallout type="warning">
+Monitor your suspense accounts closely. Funds should not remain unresolved for extended periods — most regulatory frameworks require timely resolution.
+</DocCallout>
+
+### Client Withdrawal (Payout)
+
+Payouts are a two-step process:
+
+<DocSteps>
+<DocStep title="Reserve">
+`PAYOUT_RESERVE` moves funds from the client account to a payout staging account tied to a specific reference. This ensures the client can't spend funds that are being withdrawn.
+
+<LedgerSchema schema="omnibus" tx="PAYOUT_RESERVE" />
+</DocStep>
+<DocStep title="Settle">
+Once the bank confirms the transfer, `PAYOUT_SETTLEMENT` moves funds from the staging account to the bank's main account, completing the cycle.
+
+<LedgerSchema schema="omnibus" tx="PAYOUT_SETTLEMENT" />
+</DocStep>
+</DocSteps>
+
+If a payout fails, you reverse the reservation by sending from the staging account back to the client.
+
+## Why Not Use `@world`?
+
+The `@world` account is Formance's infinite source/sink. While it simplifies examples, **omnibus accounting requires explicit tracking** of where funds actually are:
+
+- **Bank accounts go negative** (overdraft) to represent "we received funds but haven't reconciled yet" — this is intentional and meaningful
+- **Client accounts are liabilities** — their balance represents your obligation
+- **Suspense accounts** enable the "book now, attribute later" pattern that omnibus operations require
+
+Using `@world` would obscure these distinctions and make reconciliation impossible.
+
+## Queries
+
+The `queries` section defines reusable lookups:
+
+- `CLIENT_BALANCE` — get a specific client's position
+- `PENDING_SUSPENSE` — find all unresolved deposits (operational monitoring)
+- `INFLIGHT_PAYOUTS` — track reserved but unsettled withdrawals (risk management)
+
+These leverage the hierarchical account structure — filtering on `:suspense:payin` matches across all platforms, and `:payout:` matches all staging accounts.

@@ -1,0 +1,136 @@
+---
+path: /examples/getting-started/rideshare-tutorial
+title: "RideShare Tutorial"
+section: Cookbook
+order: 1
+---
+
+import { DocCallout, DocAPI } from "@formance/docs-framework"
+
+In this tutorial, we will set up and use Formance Ledger for a ride-sharing platform called "RideShare." We will design a Chart of Accounts, create a schema to enforce it, use Numscript to execute transactions, and check account balances.
+
+<DocPrerequisites fctl sandbox />
+
+## The Complete Schema
+
+Here is the full ledger schema for the RideShare tutorial. It defines the account hierarchy and all four transaction patterns we'll walk through below.
+
+<LedgerSchema schema="rideshare-tutorial" />
+
+## Design the Chart of Accounts
+
+The [Chart of Accounts](/modules/ledger/advanced/architecting-for-scale#chart-of-accounts) should reflect all account types relevant to your flow of funds and reporting needs.
+
+We recommend starting with the key questions you need the ledger to answer. For RideShare:
+
+- How much did we pay the drivers?
+- How much did we collect in service fees?
+- How much did an individual rider pay?
+- How much did an individual driver earn?
+
+And key events the ledger must support:
+
+- Rider books a ride
+- RideShare confirms the ride
+- Driver finishes the ride
+- RideShare completes ride verification
+- Driver requests earnings withdrawal
+
+The schema defines four account groups to support these questions and events:
+
+### World
+
+<LedgerSchema schema="rideshare-tutorial" chart="world" />
+
+The `@world` account represents the external world — funds entering and exiting the ledger.
+
+### Rider
+
+<LedgerSchema schema="rideshare-tutorial" chart="rider" />
+
+Each rider gets a per-ride payment account (`rider:$rider_id:ride:$ride_id:payment`) that records the estimated charge for that ride.
+
+### Ride
+
+<LedgerSchema schema="rideshare-tutorial" chart="ride" />
+
+Each ride has a `main` account (total charged) and a `fees` account (RideShare's service fee).
+
+### Driver
+
+<LedgerSchema schema="rideshare-tutorial" chart="driver" />
+
+Each driver has per-ride earning accounts and a `main` account that accumulates total earnings across rides.
+
+The structured [naming convention](/modules/ledger/core-concepts/accounts#naming-accounts) helps organize accounts into segments, making it easier to manage and query them.
+
+## Create the Schema
+
+Now let's create the [schema](/modules/ledger/working-with/ledger-schema) to enforce the Chart of Accounts. First, get your sandbox API endpoint:
+
+```bash
+fctl stack show
+```
+
+Then create the schema using the API. You can copy the YAML from the schema viewer above, or use the JSON equivalent:
+
+<DocAPI operation="v2InsertSchema" params={{ ledger: "default", version: "v1.0.0" }} noFctl
+  body={{ chart: { world: {}, rider: { "$rider_id": { ride: { "$ride_id": { payment: {} } } } }, ride: { "$ride_id": { main: {}, fees: {} } }, driver: { "$driver_id": { ride: { "$ride_id": {} }, main: {} } } }, transactions: {} }} />
+
+<DocCallout type="note">
+By default, the ledger runs in `audit` mode—transactions are validated against your schema but allowed through. For strict enforcement, see [enforcement modes](/modules/ledger/working-with/ledger-schema#enforcement-modes).
+</DocCallout>
+
+## Introduce Money into the Ledger
+
+When a rider books a ride, we record the estimated payment from `@world` into the rider's ride payment account.
+
+<LedgerSchema schema="rideshare-tutorial" tx="RIDE_BOOKING" />
+
+Execute this transaction:
+
+<DocAPI operation="v2CreateTransaction" params={{ ledger: "default" }}
+  body={{ script: { plain: "send [USD/2 2000] (\n  source = @world\n  destination = @rider:xx:ride:yy:payment\n)" } }}>
+<DocAPI.Fctl requires="fctl-2.0">{"fctl ledger transactions num intro.num"}</DocAPI.Fctl>
+</DocAPI>
+
+This adds $20 to the `@rider:xx:ride:yy:payment` account.
+
+## Run Transactions on the Ledger
+
+### Ride Confirmation
+
+When RideShare confirms the ride, transfer the payment from the rider's account to the ride's main account.
+
+<LedgerSchema schema="rideshare-tutorial" tx="RIDE_CONFIRMATION" />
+
+<DocAPI operation="v2CreateTransaction" params={{ ledger: "default" }}
+  body={{ script: { plain: "send [USD/2 2000] (\n  source = @rider:xx:ride:yy:payment\n  destination = @ride:yy:main\n)" } }}>
+<DocAPI.Fctl requires="fctl-2.0">{"fctl ledger transactions num payment.num"}</DocAPI.Fctl>
+</DocAPI>
+
+### Ride Completion
+
+After the ride is completed, split the payment between the driver's earnings and RideShare's service fees.
+
+<LedgerSchema schema="rideshare-tutorial" tx="RIDE_COMPLETION" />
+
+<DocAPI operation="v2CreateTransaction" params={{ ledger: "default" }}
+  body={{ script: { plain: "send [USD/2 2000] (\n  source = @ride:yy:main\n  destination = {\n    10% to @ride:yy:fees\n    remaining to @driver:zz:main\n  }\n)" } }}>
+<DocAPI.Fctl requires="fctl-2.0">{"fctl ledger transactions num payment_split.num"}</DocAPI.Fctl>
+</DocAPI>
+
+### Driver Payout
+
+After some days, the driver requests their earnings. Transfer all accumulated earnings back to `@world` to represent funds leaving the ledger. The wildcard `*` sends the entire balance.
+
+<LedgerSchema schema="rideshare-tutorial" tx="DRIVER_PAYOUT" />
+
+<DocAPI operation="v2CreateTransaction" params={{ ledger: "default" }}
+  body={{ script: { plain: "send [USD/2 *] (\n  source = @driver:zz:main\n  destination = @world\n)" } }}>
+<DocAPI.Fctl requires="fctl-2.0">{"fctl ledger transactions num driver_payment.num"}</DocAPI.Fctl>
+</DocAPI>
+
+## Check Account Balances
+
+You can check the balances of the accounts using the [Formance Console](https://portal.formance.cloud).

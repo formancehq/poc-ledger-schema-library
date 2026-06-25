@@ -1,0 +1,149 @@
+---
+path: /examples/advanced/stablecoin-operations
+title: "Stablecoin On-Ramp & Off-Ramp Operations"
+section: Cookbook
+order: 5
+---
+
+import { DocCallout, DocSteps, DocStep } from "@formance/docs-framework"
+
+This example shows how to implement stablecoin on-ramp (fiat-to-crypto) and off-ramp (crypto-to-fiat) operations in Formance using a declarative ledger schema. The system bridges traditional banking with blockchain minting and burning, tracking every step of the conversion lifecycle so that fiat reserves always back circulating stablecoins 1:1.
+
+<DocCallout type="info">
+This is an illustrative example. Adapt the schema to your specific business requirements, regulatory obligations, and financial practices.
+</DocCallout>
+
+## Key Concepts
+
+- **Payment Authorization as Promise** — A real-time PSP confirmation (card auth, instant payment acknowledgment) is treated as a binding asset, allowing the platform to credit the user immediately before bank settlement completes.
+- **1:1 Peg** — Every stablecoin in circulation must be backed by exactly one unit of fiat held in reserve. The ledger enforces this invariant across all minting and burning operations.
+- **Multi-Stage Settlement** — Three concurrent timelines run in parallel: payment authorization (instant), blockchain confirmation (seconds to minutes), and bank settlement (T+1 to T+3). The schema tracks each independently.
+- **In-Flight Tracking** — Dedicated accounts (`mint_in_flight`, `burn_in_flight`, pending withdrawal reserves) track assets that are between systems, giving precise visibility into what is pending at any moment.
+- **Operational Costs** — Gas fees and payment processing fees are typically absorbed by the platform and tracked in dedicated expense accounts, keeping client balances clean.
+
+## The Complete Schema
+
+This is the full ledger schema for stablecoin on-ramp and off-ramp operations. The sections below explain each part.
+
+<LedgerSchema schema="stablecoin-operations" />
+
+## Chart of Accounts
+
+The `chart` section defines five account groups:
+
+### PSP (Payment Service Providers)
+
+Accounts representing your payment processors (card acquirers, instant payment providers). These are **normal debit accounts** — a debit balance represents a promise of incoming fiat that the PSP owes you. The `$psp_id` segment identifies each provider.
+
+### Banks (Nostro Accounts)
+
+Your bank accounts that hold actual fiat reserves. The `withdrawal` sub-accounts isolate each outbound transfer by reference, so you can track the lifecycle of every fiat payout independently.
+
+### Blockchain (On-Chain Supply Tracking)
+
+These are **liability accounts** that track the on-chain state of your stablecoin across networks — credit balances represent supply you are responsible for:
+
+- **`circulating`** — total supply currently in circulation on a given network
+- **`mint_in_flight`** — mints that have been submitted but not yet confirmed on-chain
+- **`burn_in_flight`** — burns that have been submitted but not yet confirmed on-chain
+
+<DocCallout type="warning">
+Blockchain confirmations are asynchronous and can take seconds to minutes depending on the network. The in-flight accounts let you track this latency window precisely.
+</DocCallout>
+
+### Clients
+
+Each client has a `stablecoin` account representing their token balance. These are **normal credit accounts** (liabilities to users) — the credit balance shows how many stablecoins you owe them.
+
+### Platform
+
+Operational accounts for the platform itself:
+
+- **`pivot:stablecoin_issuance`** — the conversion pivot that bridges fiat and stablecoin asset types (see below)
+- **`expenses`** — payment processing fees and blockchain gas fees
+- **`revenue`** — transaction fee collection
+- **`reserves`** — fiat backing reserves and pending withdrawal staging
+
+## On-Ramp Flow (Fiat to Crypto)
+
+The on-ramp converts a user's fiat payment into stablecoins through four steps. The key design principle: **credit the user immediately** (good UX), then settle the blockchain and banking sides asynchronously.
+
+<DocSteps>
+<DocStep title="Payment Authorization & Credit">
+`ONRAMP_STEP1_PAYMENT_AUTH_CREDIT` — The user initiates a fiat payment (card, instant payment). Fiat flows from the PSP through the pivot account, which immediately converts it into stablecoins credited to the user's balance. The user sees tokens right away.
+
+<LedgerSchema schema="stablecoin-operations" tx="ONRAMP_STEP1_PAYMENT_AUTH_CREDIT" />
+</DocStep>
+<DocStep title="Mint Instruction">
+`ONRAMP_STEP2_MINT_INSTRUCTION` — The platform submits a mint transaction to the blockchain. The stablecoin obligation moves from the pivot to a mint in-flight tracking account while waiting for on-chain confirmation.
+
+<LedgerSchema schema="stablecoin-operations" tx="ONRAMP_STEP2_MINT_INSTRUCTION" />
+</DocStep>
+<DocStep title="Mint Confirmation">
+`ONRAMP_STEP3_MINT_CONFIRMATION` — The blockchain confirms the mint. The in-flight account resolves as the circulating supply increases. Tokens are now officially on-chain.
+
+<LedgerSchema schema="stablecoin-operations" tx="ONRAMP_STEP3_MINT_CONFIRMATION" />
+</DocStep>
+<DocStep title="PSP Settlement">
+`ONRAMP_STEP4_PSP_SETTLEMENT` — The PSP settles fiat to your bank account, net of processing fees. This resolves the fiat side of the pivot, completing the full backing cycle.
+
+<LedgerSchema schema="stablecoin-operations" tx="ONRAMP_STEP4_PSP_SETTLEMENT" />
+</DocStep>
+</DocSteps>
+
+<DocCallout type="info">
+Every stablecoin issued must be backed 1:1 by fiat reserves. The four-step on-ramp ensures both the blockchain mint and the bank settlement complete before the cycle is considered closed.
+</DocCallout>
+
+## Off-Ramp Flow (Crypto to Fiat)
+
+The off-ramp converts a user's stablecoins back into fiat through three steps:
+
+<DocSteps>
+<DocStep title="Burn Instruction">
+`OFFRAMP_STEP1_BURN_INSTRUCTION` — The user requests a fiat withdrawal. Their stablecoins are debited and moved to a burn in-flight account while the platform submits a burn transaction on-chain.
+
+<LedgerSchema schema="stablecoin-operations" tx="OFFRAMP_STEP1_BURN_INSTRUCTION" />
+</DocStep>
+<DocStep title="Burn Confirmation">
+`OFFRAMP_STEP2_BURN_CONFIRMATION` — The blockchain confirms the burn. Tokens are permanently removed from circulation, and the corresponding fiat amount moves from the pivot to pending withdrawal reserves.
+
+<LedgerSchema schema="stablecoin-operations" tx="OFFRAMP_STEP2_BURN_CONFIRMATION" />
+</DocStep>
+<DocStep title="Fiat Withdrawal">
+`OFFRAMP_STEP3_FIAT_WITHDRAWAL` — The platform initiates a bank transfer. Fiat moves from pending withdrawal reserves to an in-flight withdrawal account tied to a specific transfer reference.
+
+<LedgerSchema schema="stablecoin-operations" tx="OFFRAMP_STEP3_FIAT_WITHDRAWAL" />
+</DocStep>
+</DocSteps>
+
+## The Pivot Account
+
+The `platform:pivot:stablecoin_issuance` account is the central mechanism that bridges two different asset types (fiat and stablecoin) within the ledger. It acts as a conversion point:
+
+- On the **fiat side**, it receives funds from the PSP and releases them when burns are confirmed
+- On the **stablecoin side**, it issues tokens to users and reclaims them when mints are submitted
+
+<DocCallout type="info">
+The pivot account's balance should trend toward zero over time. A non-zero balance indicates unsettled conversions — either mints pending confirmation or PSP settlements not yet received. Monitor this account as a key health indicator.
+</DocCallout>
+
+## Queries
+
+The `queries` section defines reusable lookups:
+
+- **`CLIENT_STABLECOIN_BALANCE`** — get a specific client's token position
+- **`CIRCULATING_SUPPLY`** — total on-chain supply across all networks
+- **`INFLIGHT_MINTS`** / **`INFLIGHT_BURNS`** — pending blockchain operations (operational monitoring)
+- **`PENDING_WITHDRAWALS`** — fiat awaiting transfer to clients
+- **`INFLIGHT_FIAT_WITHDRAWALS`** — bank transfers in progress
+- **`PIVOT_BALANCE`** — the pivot account's current position (should trend to zero)
+
+These leverage the hierarchical account structure — filtering on `blockchain::circulating` matches across all networks, and `banks::withdrawal:` matches all in-flight payouts.
+
+## Key Differences from Traditional Operations
+
+- **Triple asynchrony** — Unlike traditional payments where you manage a single settlement timeline, stablecoin operations juggle three concurrent ones: payment authorization, blockchain confirmation, and bank settlement, each with different latency profiles.
+- **Asset creation vs. movement** — Minting creates new assets and burning destroys them. This is fundamentally different from traditional transfers that move existing funds between parties.
+- **24/7 vs. banking hours** — Blockchain networks operate continuously while bank settlements follow business day schedules, meaning the fiat and crypto sides of a transaction may resolve days apart.
+- **Precision differences** — Fiat currencies use 2 decimal places while stablecoins may use 6 to 18, requiring careful handling of decimal precision in the ledger to avoid rounding mismatches.

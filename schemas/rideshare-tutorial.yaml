@@ -7,6 +7,7 @@ meta:
     - "tutorial"
     - "marketplace"
     - "rideshare"
+  docsUrl: "https://docs.formance.com/examples/getting-started/rideshare-tutorial"
 chart:
   world:
     .self: {}

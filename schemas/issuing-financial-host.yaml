@@ -7,6 +7,7 @@ meta:
     - "issuing"
     - "cards"
     - "baas"
+  docsUrl: "https://docs.formance.com/examples/advanced/issuing-financial-host"
 chart:
   cardholder:
     $account_id:

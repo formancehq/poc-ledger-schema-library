@@ -49,6 +49,12 @@
           "items": { "type": "string" },
           "uniqueItems": true,
           "description": "Category tags for filtering in the gallery."
+        },
+        "docsUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://",
+          "description": "Absolute URL to the template's documentation page. Optional — only some templates have a dedicated docs page. Surfaced as a 'Documentation' link in the studio gallery when present."
         }
       }
     },

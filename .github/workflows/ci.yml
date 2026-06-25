@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   checks:
-    name: Validate & render
+    name: Validate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -32,9 +32,3 @@ jobs:
 
       - name: Validate templates against the canonical schema
         run: pnpm validate
-
-      - name: Render markdown
-        run: pnpm render
-
-      - name: Fail if docs/*.md or README.md are stale (run `pnpm render`)
-        run: git diff --exit-code docs README.md

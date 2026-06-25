@@ -1,0 +1,120 @@
+---
+path: /examples/advanced/payment-acceptance
+title: "Payment Card Acceptance Processing"
+section: Cookbook
+order: 3
+---
+
+import { DocCallout, DocSteps, DocStep } from "@formance/docs-framework"
+
+This example shows how to implement card payment acceptance in Formance using a declarative ledger schema. Payment acceptance covers the full lifecycle of card transactions — from the moment a customer authorizes a payment, through acquirer settlement, to handling refunds and chargebacks. The schema models authorizations as assets (binding promises to pay) so that funds are available to end-users immediately, before settlement completes.
+
+<DocCallout type="info">
+This is an illustrative example. Adapt the schema to your specific acquirer relationships, fee structures, and regulatory requirements.
+</DocCallout>
+
+## The Complete Schema
+
+This is the full ledger schema for a card payment acceptance system. The sections below explain each part.
+
+<LedgerSchema schema="payment-acceptance" />
+
+## Chart of Accounts
+
+The `chart` section defines four account groups:
+
+### Acquirers
+
+<LedgerSchema schema="payment-acceptance" chart="acquirers" />
+
+**Normal debit accounts** representing your relationship with payment acquirers (Stripe, Adyen, etc.). The balance on an acquirer account reflects **unsettled authorizations** — money promised but not yet received. Acquirer accounts go negative when authorizations are recorded before settlement, which is expected behavior.
+
+### Banks (Nostro Accounts)
+
+<LedgerSchema schema="payment-acceptance" chart="banks" />
+
+**Normal debit accounts** representing your assets held at partner banks. These are credited when the acquirer settles funds to your bank account.
+
+### Clients
+
+<LedgerSchema schema="payment-acceptance" chart="clients" />
+
+**Normal credit accounts** representing your liabilities to clients. When a card authorization tops up a wallet, the client balance increases immediately.
+
+### Platform
+
+<LedgerSchema schema="payment-acceptance" chart="platform" />
+
+**Normal credit accounts** used as operational accounts that track fees, revenue, and chargeback costs. These make the economics of each transaction explicit and auditable.
+
+### Balances & Settlement Timing
+
+Card payment acceptance creates a fundamental tension between real-time user experience and asynchronous settlement. Clients see funds credited to their wallets immediately upon authorization, but the acquirer does not actually settle those funds to your bank account until T+1 to T+3. The acquirer's negative balance represents exactly this time gap — the sum of all authorized-but-unsettled transactions.
+
+## Transaction Patterns
+
+### Card Authorization (Gross Top-Up)
+
+`CARD_AUTHORIZATION_GROSS_TOPUP` records a card authorization and immediately credits the client's wallet with the full gross amount. The acquirer account goes negative — this is intentional.
+
+<LedgerSchema schema="payment-acceptance" tx="CARD_AUTHORIZATION_GROSS_TOPUP" />
+
+<DocCallout type="info">
+**Authorization as an asset**: A card authorization is a binding promise from the issuing bank to pay. This schema treats that promise as an asset, allowing you to credit the client immediately rather than waiting days for settlement. The acquirer's negative balance represents unsettled promises.
+</DocCallout>
+
+### Acquirer Settlement
+
+`ACQUIRER_SETTLEMENT` records the settlement from the acquirer to your bank account. Acquirers settle the **net amount** (gross minus fees), so this transaction has two movements:
+
+1. The net amount flows from the bank to the acquirer account (reducing the acquirer's negative balance)
+2. The fee amount flows from the platform fee account to the acquirer (zeroing out the remainder)
+
+After settlement, the acquirer balance for those transactions should return to zero.
+
+<LedgerSchema schema="payment-acceptance" tx="ACQUIRER_SETTLEMENT" />
+
+### Card Refund
+
+`CARD_REFUND` reverses a previous authorization by debiting the client wallet and crediting the acquirer account. The acquirer then processes the refund back to the cardholder's issuing bank.
+
+<LedgerSchema schema="payment-acceptance" tx="CARD_REFUND" />
+
+### Chargeback
+
+`CHARGEBACK` handles a dispute initiated by the cardholder through their issuing bank. It debits the client wallet for the disputed amount and separately records the chargeback fee charged by the acquirer.
+
+<LedgerSchema schema="payment-acceptance" tx="CHARGEBACK" />
+
+<DocCallout type="warning">
+Chargebacks use `allowing unbounded overdraft` on the client account because a chargeback can occur even if the client has already spent the funds. The resulting negative balance represents a debt owed by the client to your platform.
+</DocCallout>
+
+## Why Model Authorizations as Assets?
+
+In traditional accounting, you would wait for settlement before recording funds. This schema takes a different approach:
+
+- **Immediate availability** — clients can use funds as soon as the authorization succeeds, which is critical for wallet top-ups and marketplace payouts
+- **Explicit fee tracking** — settlement records the net amount and fees separately, giving you a clear picture of acquirer costs
+- **Clean reconciliation** — each acquirer account should trend toward zero after settlement; a persistent balance signals missing settlements
+
+### Key Differences from Omnibus Accounts
+
+If you have worked through the [omnibus wallet example](/examples/advanced/omnibus), the payment acceptance model will feel similar but differs in key ways:
+
+- **Source of funds**: In an omnibus model, funds are already at the bank (deposits received); in payment acceptance, funds are promised by the acquirer but not yet received.
+- **Negative balances**: Omnibus accounts use suspense accounts for unidentified deposits; payment acceptance expects acquirer accounts to go negative (overdraft) as a normal part of the authorization-before-settlement flow.
+- **Settlement direction**: Omnibus payouts are typically two-step (reserve then settle); payment acceptance settlement is acquirer-driven — the acquirer pushes net funds to your bank on its own schedule.
+- **Fee tracking**: Payment acceptance makes fees explicit at every stage — acquirer processing fees on settlement and chargeback fees on disputes — whereas omnibus models typically handle fees separately.
+
+## Queries
+
+The `queries` section defines reusable lookups:
+
+- `CLIENT_BALANCE` — get a specific client's wallet balance
+- `ACQUIRER_BALANCE` — get a specific acquirer's unsettled balance (useful for reconciliation)
+- `UNSETTLED_AUTHORIZATIONS` — all acquirer accounts with outstanding balances (risk monitoring)
+- `PLATFORM_FEES` — fee volumes across all platforms
+- `PLATFORM_CHARGEBACK_FEES` — chargeback fee volumes (dispute cost tracking)
+
+These leverage the hierarchical account structure — filtering on `acquirers::main` matches all acquirer main accounts, and `platform::fees` matches all platform fee accounts.

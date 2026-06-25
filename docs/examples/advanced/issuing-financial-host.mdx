@@ -1,0 +1,185 @@
+---
+path: /examples/advanced/issuing-financial-host
+title: "Card Issuing & Financial Host"
+section: Cookbook
+order: 4
+---
+
+import { DocCallout, DocSteps, DocStep } from "@formance/docs-framework"
+
+A financial host (or issuer processor) is the system that sits between a card network and a cardholder's funds. It receives real-time authorization requests, manages hold accounts that ring-fence funds during the authorization-to-settlement lifecycle, and ultimately settles against scheme liability accounts. This example models the full card issuing flow in a single Formance ledger schema — authorizations, presentments, refunds, chargebacks, and stand-in processing.
+
+<DocCallout type="info">
+This is an illustrative example. Adapt the schema to your specific card program, BIN sponsor requirements, and scheme rules.
+</DocCallout>
+
+## The Complete Schema
+
+This is the full ledger schema for a card issuing financial host. The sections below explain each part.
+
+<LedgerSchema schema="issuing-financial-host" />
+
+## System Actors
+
+A card issuing financial host involves five distinct actors, each representing a different side of every card transaction. Understanding their roles — and how their account balances behave — is essential before reading the ledger schema.
+
+- **Cardholders**: The end users whose funds you manage. Their accounts are **normal credit accounts** (liabilities) — the balance represents funds you owe them.
+- **Banks**: Your banking partners. **Normal debit accounts** — represent actual currency reserves held at partner institutions.
+- **Schemes**: Card networks (Visa, Mastercard, etc.). **Normal credit accounts** — track settlement liabilities between you and the network.
+- **Program Manager**: BIN sponsors or third-party card program managers. Tracks reverse liability obligations.
+- **Platform**: Your operational accounts for fees, revenue, and dispute costs.
+
+The Chart of Accounts below shows how these actors map to the ledger's account hierarchy.
+
+## Chart of Accounts
+
+The `chart` section defines five account groups that mirror the participants in a card transaction.
+
+### Cardholders
+
+<LedgerSchema schema="issuing-financial-host" chart="cardholder" />
+
+Each cardholder has a **main** account (their spendable balance), plus dynamic sub-accounts created per authorization hold and per pending refund. The `main` balance minus total holds gives the **available balance** the cardholder can spend.
+
+### Schemes
+
+<LedgerSchema schema="issuing-financial-host" chart="schemes" />
+
+Scheme accounts track what the network owes you (or you owe the network) across the settlement cycle. The `chargeback` sub-account isolates dispute flows from normal settlement.
+
+### Banks, Program Manager, Platform
+
+- **`banks:$bank_id:main`** — **Normal debit accounts.** Nostro accounts representing actual funds at partner banks.
+- **`program_manager:$pm_id:liability`** — **Normal credit accounts.** Tracks reverse liability obligations to BIN sponsors or program managers.
+- **`platform:$platform_name`** — **Normal debit accounts.** Operational accounts for fees, revenue, and chargeback fees.
+
+## Transaction Patterns
+
+### Authorization Lifecycle
+
+The authorization flow manages the time between a card swipe and final settlement.
+
+Note: A declined authorization creates **no ledger posting**. The ledger only records approved transactions. Declined attempts should be logged separately for fraud monitoring and analytics.
+
+**`CARD_AUTHORIZATION_APPROVED`** moves funds from the cardholder's main account to a hold account keyed by authorization ID. An optional overdraft limit can be specified per cardholder.
+
+<LedgerSchema schema="issuing-financial-host" tx="CARD_AUTHORIZATION_APPROVED" />
+
+**`CARD_AUTHORIZATION_PARTIAL`** uses a wildcard amount (`[$asset *]`) with a `max` clause — it approves only what is available up to the requested amount. This is common at fuel dispensers or split-tender scenarios.
+
+<LedgerSchema schema="issuing-financial-host" tx="CARD_AUTHORIZATION_PARTIAL" />
+
+**`CARD_AUTHORIZATION_INCREMENTAL`** adds funds to an existing hold account. Used for hotels, car rentals, and other scenarios where the final amount is not known upfront.
+
+**`AUTHORIZATION_REVERSAL`** releases a specific amount from a hold back to main. Supports both full and partial reversals.
+
+<LedgerSchema schema="issuing-financial-host" tx="AUTHORIZATION_REVERSAL" />
+
+**`HOLD_REVERSAL_WILDCARD`** releases whatever balance remains in a hold account using a wildcard amount. Used after partial presentments, expired authorizations, or cancellations.
+
+<LedgerSchema schema="issuing-financial-host" tx="HOLD_REVERSAL_WILDCARD" />
+
+<DocCallout type="warning">
+Authorization requests are latency-critical — card networks typically require responses within 100-200ms. Design your integration to minimize round-trips to the ledger.
+</DocCallout>
+
+### Presentment (Settlement)
+
+Presentment transactions settle authorized (or offline) transactions against the scheme. They typically arrive in batch files from the network, hours or days after the original authorization.
+
+**`PRESENTMENT`** moves funds from the hold account to the scheme's main liability account. The presentment amount may differ from the authorization amount (e.g., due to currency conversion or partial fulfillment). After presentment, any remaining hold balance should be released via `HOLD_REVERSAL_WILDCARD`.
+
+<LedgerSchema schema="issuing-financial-host" tx="PRESENTMENT" />
+
+**`PRESENTMENT_WITH_TIP`** handles cases where the settled amount exceeds the authorization (e.g., restaurant tips). It drains the hold for the authorized amount and debits the cardholder's main account for the additional amount — two sends in a single atomic transaction.
+
+<LedgerSchema schema="issuing-financial-host" tx="PRESENTMENT_WITH_TIP" />
+
+**`OFFLINE_PRESENTMENT`** processes transactions where the card's chip approved the transaction without an online authorization (e.g., transit, in-flight purchases). Uses `allowing unbounded overdraft` because the issuer is obligated to honor the chip's decision.
+
+<LedgerSchema schema="issuing-financial-host" tx="OFFLINE_PRESENTMENT" />
+
+<DocCallout type="info">
+Offline presentments arrive without a prior authorization. They should be flagged for risk review since the cardholder's balance was not checked at the time of purchase.
+</DocCallout>
+
+### Refunds
+
+Refunds follow a two-step authorization-then-posting pattern, mirroring how refund messages flow through card networks.
+
+<DocSteps>
+<DocStep title="Authorize">
+`REFUND_AUTHORIZATION` moves funds from the scheme to a pending refund account. The cardholder cannot spend these funds yet.
+
+<LedgerSchema schema="issuing-financial-host" tx="REFUND_AUTHORIZATION" />
+</DocStep>
+<DocStep title="Post">
+`REFUND_POSTING` releases the pending funds to the cardholder's main account, making them available.
+
+<LedgerSchema schema="issuing-financial-host" tx="REFUND_POSTING" />
+</DocStep>
+</DocSteps>
+
+### Chargebacks
+
+Chargebacks involve a multi-step dispute process between cardholder, issuer, and merchant. The schema uses a separate `chargeback` sub-account on schemes to keep dispute flows isolated from normal settlement.
+
+<DocSteps>
+<DocStep title="Accept">
+**`CHARGEBACK_ACCEPTANCE`** credits the cardholder from the scheme's dedicated chargeback account (with unbounded overdraft, since the scheme owes you). This is the provisional credit to the cardholder while the dispute is in progress.
+
+<LedgerSchema schema="issuing-financial-host" tx="CHARGEBACK_ACCEPTANCE" />
+</DocStep>
+<DocStep title="Confirm">
+**`CHARGEBACK_CONFIRMATION`** moves funds from the scheme's main settlement account to cover the chargeback account, aligning with the actual settlement deduction from the network.
+
+<LedgerSchema schema="issuing-financial-host" tx="CHARGEBACK_CONFIRMATION" />
+</DocStep>
+</DocSteps>
+
+If the merchant wins the dispute, **`SECOND_PRESENTMENT`** reverses the chargeback — debits the cardholder and re-establishes the scheme liability. Uses unbounded overdraft because the reversal is mandatory regardless of the cardholder's current balance.
+
+<LedgerSchema schema="issuing-financial-host" tx="SECOND_PRESENTMENT" />
+
+### Stand-In Processing (STIP)
+
+**`STIP_ADVICE`** handles transactions that were approved by the network's stand-in processor when the issuer was unavailable. These are mandatory debits with unbounded overdraft — the transaction was already approved and the cardholder has already received the goods or services.
+
+<LedgerSchema schema="issuing-financial-host" tx="STIP_ADVICE" />
+
+<DocCallout type="warning">
+STIP transactions bypass your authorization logic entirely. Monitor these closely and ensure your system can process the resulting advice messages promptly to keep balances accurate.
+</DocCallout>
+
+## Available Balance vs. Actual Balance
+
+A cardholder's **actual balance** is the balance on their `main` account. Their **available balance** is the actual balance minus the sum of all active holds. When deciding whether to approve an authorization, use available balance — not actual balance.
+
+The schema achieves this naturally: approving an authorization moves funds out of `main` into a `hold` sub-account, so the `main` balance always reflects what is truly available.
+
+## Overdraft Policies
+
+The schema supports three overdraft modes depending on the transaction type:
+
+- **Bounded overdraft** (`allowing overdraft up to [$asset $overdraft]`) — Used for standard authorizations where you control the credit limit per cardholder.
+- **Unbounded overdraft** (`allowing unbounded overdraft`) — Used for mandatory debits like offline presentments, STIP advice, and second presentments where the transaction has already been approved.
+- **No overdraft** — The default. Presentments from hold accounts and refund postings should never need overdraft since funds are already ring-fenced.
+
+## Queries
+
+The schema defines reusable queries for operational monitoring and reconciliation. These leverage the hierarchical account structure and metadata to filter across the ledger.
+
+**Authorization monitoring:**
+- **`ALL_HOLDS`** / **`CARDHOLDER_HOLDS`** / **`SPECIFIC_HOLD`** — Inspect authorization holds at various levels of granularity.
+- **`ACTIVE_HOLDS_FOR_CARD`** — Find active holds for a specific payment instrument (card), filtered by metadata and positive balance.
+
+**Settlement and reconciliation:**
+- **`SCHEME_LIABILITY`** / **`ALL_SCHEME_LIABILITIES`** — Track what each network owes you (or vice versa) for settlement reconciliation.
+- **`ALL_CARDHOLDER_BALANCES`** — Overview of all cardholder positions.
+
+**Disputes and refunds:**
+- **`PENDING_REFUNDS`** — Find all authorized but unposted refunds across the system.
+- **`SCHEME_CHARGEBACKS`** / **`ALL_CHARGEBACKS`** — Monitor dispute-related liabilities.
+
+**Risk and audit:**
+- **`OFFLINE_TRANSACTIONS`** — Audit trail of all offline presentments, useful for risk monitoring.
