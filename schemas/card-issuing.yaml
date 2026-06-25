@@ -7,6 +7,7 @@ meta:
     - "cards"
     - "issuing"
     - "settlement"
+  docsUrl: "https://docs.formance.com/examples/advanced/card-issuing"
 chart:
   cardholders:
     $cardholder_id:

@@ -7,6 +7,7 @@ meta:
     - "ecommerce"
     - "marketplace"
     - "payouts"
+  docsUrl: "https://docs.formance.com/examples/advanced/ecommerce-platform"
 chart:
   customers:
     $customer_id:

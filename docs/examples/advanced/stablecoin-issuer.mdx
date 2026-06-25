@@ -1,0 +1,216 @@
+---
+path: /examples/advanced/stablecoin-issuer
+title: "Stablecoin Issuer"
+section: Cookbook
+order: 6
+---
+
+import { DocCallout, DocSteps, DocStep } from "@formance/docs-framework"
+
+This example shows how to model a reserve-backed stablecoin issuer in Formance using a declarative ledger schema. Unlike a pure on-ramp/off-ramp gateway, an issuer holds the fiat reserves itself: every token in circulation is a liability backed by segregated cash at one or more reserve banks. The schema tracks the full mint and redemption lifecycle, interbank reserve rebalancing, and reserve yield — and exposes a single load-bearing query that proves circulating supply equals total backing 1:1.
+
+**Common use cases:**
+- **Regulated stablecoin issuers** holding segregated fiat reserves across multiple banking partners
+- **E-money and tokenized-deposit programs** that must demonstrate full backing to auditors and regulators
+- **Treasury operations** that earn and account for yield on idle reserves
+
+<DocCallout type="info">
+This is an illustrative example. Adapt the schema to your specific business requirements, regulatory obligations, and financial practices.
+</DocCallout>
+
+## Key Concepts
+
+- **1:1 Parity Invariant** — The central guarantee: total circulating token supply must equal total settled fiat reserve, plus backing in motion between banks, minus redemptions that are burned-but-not-yet-paid (their backing is owed out). The `parity_invariant_supply_vs_total_backing` query proves this daily.
+- **Reserve Accounts** — Each reserve bank holds a `reserve` sub-account of settled fiat backing. This is the real cash that stands behind the tokens. Reserves can move between banks via rebalancing without ever breaking parity.
+- **In-Transit Accounts** — Dedicated per-operation accounts isolate fiat that is mid-flight: `mints:$mintId:inTransit` (wired but not settled, and therefore not yet backing), `redemptions:$redemptionId:settling` (backing owed out), and `reserves:rebalance:$rebalanceId:inTransit` (backing moving between banks). Each drains to zero at settlement or return.
+- **On-Chain Supply as an External Sink** — The per-network `external:networks:$networkId:supply` boundary runs **negative** as tokens are issued into circulation; its absolute value is the on-chain circulating supply. It provides an independent, second measure of supply to cross-check against the holder-side total.
+- **Two-Phase Mint and Redemption** — Both lifecycles split into an initiate/request step and a settle step, so the ledger reflects bank settlement timing precisely and supports clean returns at either stage.
+- **Yield Accrual and Sweep** — Interest earned on reserves accrues into a segregated `yield:accrued` sub-account, then sweeps to operational revenue on a schedule, keeping earned-but-unswept yield distinct from booked revenue.
+- **Redemption Fee** — Redemptions carry a fee (10 bps in this schema) skimmed at request time into a dedicated fee account, leaving the net payout obligation behind.
+
+## The Complete Schema
+
+This is the full ledger schema for a reserve-backed stablecoin issuer. The sections below explain each part.
+
+<LedgerSchema schema="stablecoin-issuer" />
+
+## Chart of Accounts
+
+The `chart` section defines four account groups: the issuer's internal `platform` accounts, the `holders` who own tokens, the reserve-bank `counterparties`, and the `external` world boundaries for fiat and on-chain supply.
+
+### Platform
+
+<LedgerSchema schema="stablecoin-issuer" chart="platform" />
+
+These are the issuer's operational accounts:
+
+- **`banks:$bankId:reserve`** — settled fiat backing held at each reserve bank. A **normal debit** account: the debit balance is real cash you hold, and the sum across banks is the settled-backing figure in the parity proof.
+- **`banks:$bankId:yield:accrued`** — a segregated sub-account holding interest credited by that bank but not yet swept to revenue.
+- **`mints:$mintId:inTransit`** — per-mint staging for fiat that has been wired but not yet settled. Excluded from backing, because the tokens are not yet minted.
+- **`redemptions:$redemptionId:settling`** and **`redemptions:$redemptionId:payable`** — per-redemption staging: `settling` holds the gross obligation while the bank settles, and `payable` holds the net fiat owed to the holder.
+- **`reserves:rebalance:$rebalanceId:inTransit`** — per-rebalance staging for reserve cash moving between banks; this is backing in motion and counts toward parity.
+- **`fees:redemption`** — accrued redemption-fee balance, a revenue account.
+- **`revenue:yield`** — the running total of reserve yield booked as operational revenue.
+
+The `$bankId`, `$mintId`, `$redemptionId`, and `$rebalanceId` placeholders are substituted at posting time with the concrete identifier for each bank or operation, so every mint, redemption, and rebalance gets its own isolated lifecycle.
+
+### Holders
+
+<LedgerSchema schema="stablecoin-issuer" chart="holders" />
+
+Each holder's `$holderId` account carries their circulating token balance. These are **normal credit accounts** — the credit balance is the issuer's liability to that holder. The reserved `.self` account is available for issuer-held positions. The sum across all holders is the platform-wide circulating liability and the holder-side input to the parity proof.
+
+### Counterparties
+
+<LedgerSchema schema="stablecoin-issuer" chart="counterparties" />
+
+The `banks:$bankId` accounts represent the reserve banks as external counterparties. They are the source of credited interest in the yield-accrual flow, kept distinct from the `platform:banks` accounts that hold your actual reserves and accrued yield.
+
+### External
+
+<LedgerSchema schema="stablecoin-issuer" chart="external" />
+
+The boundary accounts where value enters and leaves the ledger:
+
+- **`fiat:wires`** — incoming mint wires from holders.
+- **`fiat:payouts`** — outgoing redemption payouts to holders.
+- **`networks:$networkId:supply`** — the per-network on-chain boundary. Tokens are issued from here into circulation, so the account runs **negative**; its absolute value is the on-chain circulating supply for that network. The wildcard `external:networks::supply` rolls up the whole fleet.
+
+## Mint Flow
+
+Minting is a two-phase process tied to bank settlement: the holder's fiat wire is recorded in transit first, and the token is only issued once the reserve bank confirms settlement. A wire reversed before settlement is cleanly returned with no token ever minted.
+
+<DocSteps>
+<DocStep title="Initiate">
+`MINT_INITIATE` — A holder's fiat wire is acknowledged. The cash is recorded in the per-mint `inTransit` account (sourced from `external:fiat:wires`), but no token is credited yet. This fiat is deliberately excluded from backing until the mint settles.
+
+<LedgerSchema schema="stablecoin-issuer" tx="MINT_INITIATE" />
+</DocStep>
+<DocStep title="Settle">
+`MINT_SETTLE` — The reserve bank confirms settlement. The in-transit fiat becomes settled `reserve`, and in the same transaction the token is minted to the holder by sourcing it from the on-chain `supply` boundary (driving it further negative). Backing and circulating supply increase together, preserving parity.
+
+<LedgerSchema schema="stablecoin-issuer" tx="MINT_SETTLE" />
+</DocStep>
+<DocStep title="Return (if reversed)">
+`MINT_RETURN` — If the wire is reversed before settlement, the in-transit fiat is returned to `external:fiat:wires` and no token is minted. The transaction is tagged as an adjustment referencing the original posting.
+
+<LedgerSchema schema="stablecoin-issuer" tx="MINT_RETURN" />
+</DocStep>
+</DocSteps>
+
+## Transfer Flow
+
+Holders can move tokens between each other without touching reserves — a peer-to-peer transfer is purely a reallocation of the issuer's circulating liability, so total supply and total backing are both unchanged.
+
+<DocSteps>
+<DocStep title="Transfer">
+`TRANSFER` — Tokens move directly from one holder to another. No reserve, in-transit, or supply account is touched.
+
+<LedgerSchema schema="stablecoin-issuer" tx="TRANSFER" />
+</DocStep>
+<DocStep title="Reverse">
+`TRANSFER_REVERSE` — Reverses a prior transfer, returning the tokens to the original sender. Tagged as an adjustment referencing the original posting.
+
+<LedgerSchema schema="stablecoin-issuer" tx="TRANSFER_REVERSE" />
+</DocStep>
+</DocSteps>
+
+## Redemption Flow
+
+Redemption is the mirror of minting and also two-phase. The holder burns tokens at request time and a fee is skimmed, but the reserve is untouched until the bank actually settles the payout. A settled payout that later fails can be fully unwound.
+
+<DocSteps>
+<DocStep title="Request">
+`REDEEM_REQUEST` — The holder burns tokens back to the on-chain `supply` boundary (reducing circulating supply), and the gross fiat obligation is booked: a 10 bps `fee` is split off to `platform:fees:redemption`, and the remaining net amount lands in the per-redemption `payable` account. The reserve is deliberately left untouched until settlement.
+
+<LedgerSchema schema="stablecoin-issuer" tx="REDEEM_REQUEST" />
+</DocStep>
+<DocStep title="Settle">
+`REDEEM_SETTLE` — The reserve bank settles the payout. The gross amount drains from the bank's `reserve` into the redemption `settling` account, and the net fiat leaves to `external:fiat:payouts`. Backing and circulating supply fall together.
+
+<LedgerSchema schema="stablecoin-issuer" tx="REDEEM_SETTLE" />
+</DocStep>
+<DocStep title="Return (if reversed)">
+`REDEEM_RETURN` — If a settled payout is returned, the redemption is cancelled end to end: net fiat and fee flow back into the bank's `reserve`, and the burned tokens are re-issued to the holder from the on-chain `supply` boundary. Tagged as an adjustment referencing the original posting.
+
+<LedgerSchema schema="stablecoin-issuer" tx="REDEEM_RETURN" />
+</DocStep>
+</DocSteps>
+
+## Reserve Rebalancing
+
+Reserves can be moved between banking partners — to manage concentration risk, fund a payout at the right bank, or optimize yield — without affecting circulating supply. The cash sits in a per-rebalance in-transit account while it moves, where it still counts as backing in motion.
+
+<DocSteps>
+<DocStep title="Initiate">
+`REBALANCE_INITIATE` — Reserve cash leaves one bank's `reserve` into the per-rebalance `inTransit` account, where it is held until the interbank transfer settles.
+
+<LedgerSchema schema="stablecoin-issuer" tx="REBALANCE_INITIATE" />
+</DocStep>
+<DocStep title="Settle">
+`REBALANCE_SETTLE` — The in-transit cash settles into the destination bank's `reserve`. Total settled-plus-in-motion backing is unchanged throughout.
+
+<LedgerSchema schema="stablecoin-issuer" tx="REBALANCE_SETTLE" />
+</DocStep>
+<DocStep title="Return (if failed)">
+`REBALANCE_RETURN` — A failed interbank transfer returns the in-transit cash to the origin bank's `reserve`. Tagged as an adjustment referencing the original posting.
+
+<LedgerSchema schema="stablecoin-issuer" tx="REBALANCE_RETURN" />
+</DocStep>
+</DocSteps>
+
+## Yield Flow
+
+Idle reserves earn interest. The schema keeps earned-but-unswept yield segregated from booked revenue, so the reserve balance that backs tokens is never inflated by accrued interest that has not yet been recognized.
+
+<DocSteps>
+<DocStep title="Accrue">
+`YIELD_ACCRUE` — A reserve bank credits interest, which is recorded from the bank `counterparty` into the segregated `platform:banks:$bankId:yield:accrued` sub-account, tagged with the accrual period. This keeps accrued yield out of the `reserve` account that drives the parity proof.
+
+<LedgerSchema schema="stablecoin-issuer" tx="YIELD_ACCRUE" />
+</DocStep>
+<DocStep title="Sweep">
+`YIELD_SWEEP` — On a monthly cadence, accrued yield sweeps from `yield:accrued` into `platform:revenue:yield`, recognizing it as operational revenue.
+
+<LedgerSchema schema="stablecoin-issuer" tx="YIELD_SWEEP" />
+</DocStep>
+</DocSteps>
+
+## The Parity Invariant
+
+The load-bearing guarantee of the whole schema is the 1:1 parity proof, expressed by `parity_invariant_supply_vs_total_backing` and run daily. Stated in prose:
+
+> Total circulating token supply (the sum of all `holders:` balances) must equal total settled fiat reserve (`platform:banks::reserve`) **plus** reserve backing in motion (`platform:reserves:rebalance::inTransit`), **minus** redemptions that are burned-but-not-yet-paid (`platform:redemptions::settling`), whose backing is already owed out.
+
+The two-phase design is what makes this hold exactly:
+
+- **Mint cash in transit is excluded.** During `MINT_INITIATE` the fiat sits in `mints::inTransit` but no token exists yet, so that cash is not yet backing. Only at `MINT_SETTLE` do reserve and token appear together.
+- **Burned-but-unpaid redemptions are subtracted.** At `REDEEM_REQUEST` the token is already burned (supply down) but the reserve has not yet drained; the `settling` balance represents backing owed out and is removed from the backing side until `REDEEM_SETTLE` completes.
+- **Rebalances stay in the count.** Cash in `reserves:rebalance::inTransit` is still backing, just between banks, so it is added back in.
+- **Accrued yield is excluded from backing.** It lives in a separate `yield:accrued` sub-account, never in `reserve`, so earning interest never overstates what backs the tokens.
+
+The `cross_check_holder_supply_vs_network_supply` query provides an independent second proof: the holder-side total must equal the absolute value of the on-chain `external:networks::supply` boundaries. A drift between the two means a mint or burn touched one side without the other.
+
+## Queries
+
+The `queries` section defines reusable lookups. The two parity proofs come first, followed by reconciliation, operational dashboards, aging checks, and drill-downs:
+
+- **`parity_invariant_supply_vs_total_backing`** — the load-bearing 1:1 proof; holder supply versus total backing, compared daily.
+- **`cross_check_holder_supply_vs_network_supply`** — independent supply check against the on-chain network boundaries.
+- **`per_bank_reserve_balance`** — one bank's settled reserve, for reconciliation against that bank's statement (substitute the bank id).
+- **`total_circulating_supply_holder_side`** — the platform-wide circulating liability summed across all holders.
+- **`per_holder_circulating_balance`** — one holder's token balance (substitute the holder id).
+- **`per_network_circulating_supply`** — circulating supply on one network, from its on-chain boundary (absolute value).
+- **`total_settled_reserve`** — settled reserve summed across both banks; the settled-backing figure in the parity proof.
+- **`in_flight_backing_dashboard`** — every fiat amount in motion or owed: mints in transit, redemptions settling, and rebalances in transit, at a glance.
+- **`accrued_yield_awaiting_sweep`** — interest credited but not yet swept, held in the segregated yield-accrued sub-accounts.
+- **`daily_redemption_fee_revenue`** — the running redemption-fee balance.
+- **`swept_yield_revenue`** — the running total of reserve yield booked as revenue.
+- **`daily_redemption_fee_revenue_flow`** — fee revenue earned in a day, read as volume into the fee account.
+- **`reserve_settlement_throughput`** — fiat settled into and out of one reserve bank over a period (substitute bank id and window).
+- **`per_holder_token_throughput`** — token in and out of one holder over a period (substitute holder id and window).
+- **`aging_mints_in_transit`** — per-mint in-transit accounts with a non-zero balance: wired but neither settled nor returned.
+- **`aging_redemptions_settling`** — per-redemption settling accounts still outstanding: token burned but payout not yet settled.
+- **`aging_rebalances_in_transit`** — per-rebalance in-transit accounts that have not settled or returned.
+- **`all_transactions_touching_one_holder`** — every posting that hit a holder, in either direction, for drill-down (substitute the holder id).
+- **`trace_one_redemption_end_to_end`** — every transaction tagged with a redemption id, across request, settlement, and any return (substitute the redemption id).

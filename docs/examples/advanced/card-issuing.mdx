@@ -1,0 +1,190 @@
+---
+path: /examples/advanced/card-issuing
+title: "Card Issuing"
+section: Cookbook
+order: 8
+---
+
+import { DocCallout, DocSteps, DocStep } from "@formance/docs-framework"
+
+This example shows how to model a card-issuing program in Formance using a declarative ledger schema. The system tracks the full lifecycle of a card payment — from the moment an authorization places a hold on a cardholder's prefunded balance, through network clearing, to the cash settling into a bank account. It is built around a daily three-way match that reconciles authorizations against the network clearing file against the cash that actually settles.
+
+**Common use cases:**
+- **Prefunded debit programs** where cardholders load a balance before spending
+- **BIN-sponsored card programs** that owe per-card and volume-based fees to a sponsor
+- **Multi-scheme issuing** with interchange revenue and dispute management across networks
+
+<DocCallout type="info">
+This is an illustrative example. Adapt the schema to your specific business requirements, regulatory obligations, and financial practices.
+</DocCallout>
+
+## Key Concepts
+
+- **Authorization holds as in-flight funds** — When a card authorizes, funds move out of the cardholder's `available` balance into a per-authorization `holds` sub-account. The hold is real, segregated ledger state: the cardholder can no longer spend it, but it has not yet left the program. Each hold lives at its own `$authorization_id` address so its lifecycle can be tracked independently.
+- **The auth → clearing → settlement lifecycle** — A card payment resolves across three stages. The authorization reserves funds; capture converts the hold into a captured position toward the scheme; network clearing books the settlement obligation and accrues interchange; scheme settlement lands the net cash in a bank account. Each stage is a distinct transaction, so the position is always visible at every step.
+- **The daily three-way match** — Three independent views must reconcile each day: the captured-and-cleared position (`counterparties:schemes::settlement`), the cash that has actually landed (`platform:banks::settlement`), and the holds still open against cardholders. Because every stage is its own posting, the ledger is the source of truth on either side of the network's clearing file.
+- **Holds resolve three ways** — An authorization hold is either captured (the purchase completes), reversed (the merchant or network cancels it), or expires after seven days. Reversals and expiries return the held funds to `available` and are flagged as adjustments.
+- **Fee and interchange handling** — Interchange earned on clearing is first accrued, then reclassified to settled when the scheme confirms it — a two-stage recognition. BIN sponsor fees (per-card and on-volume) accrue as an obligation the platform owes the sponsor, and are paid down from the settlement bank.
+
+## The Complete Schema
+
+This is the full ledger schema for a card-issuing program. The sections below explain each part.
+
+<LedgerSchema schema="card-issuing" />
+
+## Chart of Accounts
+
+The `chart` section defines three top-level groups: the `cardholders` who hold prefunded balances, the `platform`'s own operational accounts, and the external `counterparties` (schemes and BIN sponsors) the program settles with.
+
+### Cardholders
+
+<LedgerSchema schema="card-issuing" chart="cardholders" />
+
+Each cardholder has an `available` balance and a `holds` sub-tree. These are **normal credit accounts** — the credit balance represents the prefunded liability the program owes the cardholder. `available` is the spendable balance; each open authorization lives at its own `holds:$authorization_id` address, so total cardholder claim is always `available` plus every open hold.
+
+### Platform
+
+<LedgerSchema schema="card-issuing" chart="platform" />
+
+**Mixed-nature operational accounts.** `banks:$bank_id` holds the partner-bank `custody` pool that backs prefunded loads and the `settlement` account where scheme cash lands. `clearing:schemes:$scheme_id:captured` is the staging position between capture and clearing. `revenue:interchange` splits earned interchange into `accrued` and `settled`; `expense:binSponsor` tracks `perCard` and `volume` fees per program; `disputes:schemes:$scheme_id:open:$dispute_id` isolates each open chargeback while it awaits a representment outcome.
+
+### Counterparties
+
+<LedgerSchema schema="card-issuing" chart="counterparties" />
+
+The external parties the program settles against. `schemes:$scheme_id:settlement` is the net position owed to or by each card scheme — the ledger side of the daily three-way match. `binSponsors:$sponsor_id` carries the running obligation to each BIN sponsor; it runs negative as fees accrue and rises toward zero on payment.
+
+## The Authorization-to-Settlement Lifecycle
+
+A card payment is recorded as a sequence of transactions. Funds are first loaded, then held on authorization, captured, cleared by the network, and finally settled as cash.
+
+<DocSteps>
+<DocStep title="Load">
+`CARDHOLDER_LOAD` moves prefunded balance from the partner-bank custody pool into the cardholder's `available` balance. The custody account is allowed unbounded overdraft, accommodating the case where the ledger entry is booked before bank reconciliation.
+
+<LedgerSchema schema="card-issuing" tx="CARDHOLDER_LOAD" />
+</DocStep>
+<DocStep title="Authorize">
+`CARD_AUTHORIZATION` reserves cardholder funds by moving them from `available` into a per-authorization hold. The hold is segregated under `holds:$authorization_id` so the cardholder can no longer spend the reserved amount.
+
+<LedgerSchema schema="card-issuing" tx="CARD_AUTHORIZATION" />
+</DocStep>
+<DocStep title="Capture">
+`CARD_CAPTURE` converts an authorization into a captured position toward the scheme. It sources from the hold first and falls back to `available`, accommodating captures that exceed the original authorized amount, and lands the funds in `clearing:schemes:$scheme_id:captured`.
+
+<LedgerSchema schema="card-issuing" tx="CARD_CAPTURE" />
+</DocStep>
+<DocStep title="Clear">
+`NETWORK_CLEARING` books the clearing file. It moves the cleared amount from the captured staging account into the scheme's settlement position, and in a second posting accrues interchange from that settlement position into `revenue:interchange:$program_id:accrued`.
+
+<LedgerSchema schema="card-issuing" tx="NETWORK_CLEARING" />
+</DocStep>
+<DocStep title="Settle">
+`SCHEME_SETTLEMENT` settles the net scheme position as cash into the settlement bank account, closing the cash side of the lifecycle.
+
+<LedgerSchema schema="card-issuing" tx="SCHEME_SETTLEMENT" />
+</DocStep>
+</DocSteps>
+
+### Releasing and Refunding
+
+Not every authorization captures. A hold can be reversed by the merchant or network, or it can expire.
+
+<DocSteps>
+<DocStep title="Reversal">
+`CARD_AUTH_REVERSAL` releases a hold back to the cardholder's `available` balance when an authorization is cancelled. It is flagged as an adjustment.
+
+<LedgerSchema schema="card-issuing" tx="CARD_AUTH_REVERSAL" />
+</DocStep>
+<DocStep title="Expiry">
+`CARD_AUTH_EXPIRY` releases a hold that has reached the seven-day authorization expiry. Like a reversal, it returns funds to `available` and is flagged as an adjustment.
+
+<LedgerSchema schema="card-issuing" tx="CARD_AUTH_EXPIRY" />
+</DocStep>
+<DocStep title="Refund">
+`CARD_REFUND` returns scheme funds to a cardholder's `available` balance after a purchase has already cleared, referencing the original capture it adjusts.
+
+<LedgerSchema schema="card-issuing" tx="CARD_REFUND" />
+</DocStep>
+</DocSteps>
+
+### Interchange Settlement
+
+Interchange is recognized in two stages. `NETWORK_CLEARING` accrues it; once the scheme confirms, `INTERCHANGE_SETTLEMENT` reclassifies the accrued amount to settled.
+
+<LedgerSchema schema="card-issuing" tx="INTERCHANGE_SETTLEMENT" />
+
+### Disputes
+
+A chargeback claws funds back from the scheme into a per-dispute hold while representment is pending, then resolves one of two ways.
+
+<DocSteps>
+<DocStep title="Open">
+`CHARGEBACK_OPENED` claws the disputed amount back from the scheme's settlement position into a per-dispute account under `disputes:schemes:$scheme_id:open:$dispute_id`.
+
+<LedgerSchema schema="card-issuing" tx="CHARGEBACK_OPENED" />
+</DocStep>
+<DocStep title="Won">
+`CHARGEBACK_WON` returns the dispute funds to the scheme when representment succeeds.
+
+<LedgerSchema schema="card-issuing" tx="CHARGEBACK_WON" />
+</DocStep>
+<DocStep title="Lost">
+`CHARGEBACK_LOST` credits the dispute funds to the cardholder's `available` balance when representment fails.
+
+<LedgerSchema schema="card-issuing" tx="CHARGEBACK_LOST" />
+</DocStep>
+</DocSteps>
+
+### BIN Sponsor Fees
+
+The program owes its BIN sponsor recurring fees, which accrue as an obligation and are paid down periodically.
+
+<DocSteps>
+<DocStep title="Per-card fee">
+`BIN_SPONSOR_CARD_FEE` accrues the per-card monthly fee as an obligation against the sponsor, recorded as a `perCard` expense per program.
+
+<LedgerSchema schema="card-issuing" tx="BIN_SPONSOR_CARD_FEE" />
+</DocStep>
+<DocStep title="Volume fee">
+`BIN_SPONSOR_VOLUME_FEE` accrues the basis-points-on-volume fee as an obligation, recorded as a `volume` expense per program.
+
+<LedgerSchema schema="card-issuing" tx="BIN_SPONSOR_VOLUME_FEE" />
+</DocStep>
+<DocStep title="Payment">
+`BIN_SPONSOR_PAYMENT` pays the outstanding obligation from the settlement bank. It reads the sponsor's overdraft balance to determine the amount owed, then settles it in full.
+
+<LedgerSchema schema="card-issuing" tx="BIN_SPONSOR_PAYMENT" />
+</DocStep>
+</DocSteps>
+
+## The Daily Three-Way Match
+
+The schema is designed so that three independent positions can be reconciled each day. Because every stage of the lifecycle is its own posting against named accounts, the ledger holds the truth on both sides of the network's clearing file:
+
+- **Authorizations** — open holds across all cardholders represent funds reserved but not yet captured.
+- **Network clearing** — `counterparties:schemes::settlement` is the cleared-but-not-yet-settled position, matched against the scheme's clearing file.
+- **Settlement** — `platform:banks::settlement` is the cash that has actually landed in the bank.
+
+When the captured-and-cleared position, the open holds, and the settled cash all reconcile against the network's records, the day's activity is fully accounted for. Discrepancies surface as a non-zero difference in one of the three views.
+
+## Queries
+
+The `queries` section defines reusable lookups, organized around cardholder positions, the three-way match, interchange, disputes, and BIN sponsor fees:
+
+- **`one_cardholder_available_versus_held`** — every account in one cardholder's subtree, available and each open hold, with the current balance per asset.
+- **`open_holds_for_one_cardholder`** — one cardholder's open authorization holds; each non-zero hold has not yet captured, reversed, or expired.
+- **`total_cardholder_liability`** — the available balance summed across every cardholder, the program's total spendable prefunded liability.
+- **`total_cardholder_holds`** — every open hold summed across cardholders.
+- **`cardholder_claims_versus_custody_backing`** — all cardholder claims (available plus holds) for comparison against the pooled custody backing at the partner bank.
+- **`cleared_but_not_yet_settled`** — the scheme settlement position per scheme, the ledger side of the daily three-way match.
+- **`settlement_landed_in_the_bank`** — the settlement bank balance, the cash the scheme has actually settled.
+- **`interchange_accrued_versus_settled_per_program`** — accrued and settled interchange side by side, per program.
+- **`interchange_accrued_over_a_day_per_program`** — volume into the accrued interchange account over a daily window, per program.
+- **`open_disputes_across_schemes`** — every open per-dispute account with a non-zero balance, each awaiting a representment outcome.
+- **`one_dispute_lifecycle_audit`** — every transaction that touched one dispute account: the open event and the won or lost terminal event.
+- **`bin_sponsor_outstanding_obligation`** — the running balance the platform owes a BIN sponsor; negative as fees accrue, rising toward zero on payment.
+- **`bin_sponsor_expense_by_program_and_fee_type`** — cumulative BIN sponsor expense broken out by program and fee type.
+- **`cardholder_load_volume_over_a_period`** — volume into cardholder available balances over a period, across all cardholders.
+
+These leverage the hierarchical account structure — filtering on `cardholders::available` matches across all cardholders, and `:holds:` matches every open authorization hold.

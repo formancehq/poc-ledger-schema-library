@@ -1,0 +1,165 @@
+---
+path: /examples/advanced/marketplace-payouts
+title: "Marketplace Payouts"
+section: Cookbook
+order: 9
+---
+
+import { DocCallout, DocSteps, DocStep } from "@formance/docs-framework"
+
+This example shows how to model a marketplace in Formance using a declarative ledger schema. When a buyer pays for an order, the gross amount is split between the platform's commission, the PSP's processing fee, and the seller's share — which is held in escrow until delivery is confirmed, released to the seller's balance, and eventually paid out. The schema also tracks how refunds and chargebacks claw funds back from sellers, with the platform absorbing any shortfall.
+
+**Common use cases:**
+- **E-commerce marketplaces** splitting each order between platform commission and seller proceeds
+- **Gig and services platforms** holding funds in escrow until a job is confirmed complete
+- **Multi-vendor platforms** running periodic payout batches and managing seller liabilities
+
+<DocCallout type="info">
+This is an illustrative example. Adapt the schema to your specific business requirements, regulatory obligations, and financial practices.
+</DocCallout>
+
+## Key Concepts
+
+- **Order Split** — A single buyer payment is split atomically at capture into three parts: the platform's `commission`, the PSP's `feesPayable`, and the remainder held for the seller. The split happens in one transaction, so the books always balance against the gross captured amount.
+- **Escrow Until Delivery** — The seller's share is not credited to the seller immediately. It sits in a per-order escrow `held` account until delivery is confirmed, at which point it is released to the seller's `payable` balance. This keeps undelivered orders separate from funds the seller can actually be paid.
+- **Seller Liability Balances** — Each seller's `payable` is a liability the platform owes them. Payouts move through a staged `payout:pending` account so reserved funds can't be double-spent and failed transfers can be returned cleanly.
+- **Chargeback Absorption** — When a buyer disputes a charge, the loss is charged against the seller's `payable` first, and the platform absorbs whatever the seller can't cover into its own `chargebacks` expense account. The same first-seller-then-platform waterfall applies to refunds.
+
+## The Complete Schema
+
+This is the full ledger schema for a marketplace payouts system. The sections below explain each part.
+
+<LedgerSchema schema="marketplace-payouts" />
+
+## Chart of Accounts
+
+The `chart` section defines the account groups for the marketplace: sellers, per-order escrow, the platform's own books, the PSPs and exchanges acting as counterparties.
+
+### Sellers
+
+<LedgerSchema schema="marketplace-payouts" chart="sellers" />
+
+**Normal credit accounts** — each seller's `payable` represents a liability the platform owes them. The `payout:pending` sub-account stages funds reserved for an in-flight payout, isolating them from the available `payable` balance so a transfer in progress can't be spent or paid out twice. A seller is keyed by `$seller_id`.
+
+### Escrow
+
+<LedgerSchema schema="marketplace-payouts" chart="escrow" />
+
+A per-order `held` account, keyed by `$order_id`. It receives the seller's share of an order at capture and drains to zero when the order is released to the seller or refunded to the buyer. A lingering non-zero balance means the order is still awaiting delivery confirmation.
+
+### Platform
+
+<LedgerSchema schema="marketplace-payouts" chart="platform" />
+
+**Mixed nature accounts** — the platform's own books. `revenue:commission` and `revenue:fx` record earned income; `expense:refunds` and `expense:chargebacks` capture the costs the platform absorbs. The `banks` group holds each settlement bank's `operating` and `payout` accounts (keyed by `$bank_id`), `treasury:fx` carries the open FX book, and `suspense:reconciliation:differences` parks reconciliation deltas pending investigation.
+
+### Counterparties
+
+<LedgerSchema schema="marketplace-payouts" chart="counterparties" />
+
+The PSPs the platform settles with, keyed by `$psp_id`. The `settlement` account tracks the receivable owed by the PSP from captured payments (it runs negative until the PSP sweeps cash to the bank), while `feesPayable` accrues the processing fees the PSP retains.
+
+### Exchanges
+
+<LedgerSchema schema="marketplace-payouts" chart="exchanges" />
+
+Per-conversion crossing accounts keyed by `$conversion_id`, used as the pivot when a seller's payable is converted from one currency to another. Each conversion account is tagged with its execution rate and settles to zero once the crossing completes.
+
+## Order Capture & Split
+
+When a buyer's card payment is captured at the PSP, the gross amount is split in a single transaction.
+
+<DocSteps>
+<DocStep title="Capture & Split">
+`ORDER_PAYMENT_CAPTURED` records the captured payment. The gross is sourced from the PSP settlement receivable and split three ways: up to `$commission` to the platform's commission revenue, up to `$psp_fee` to the PSP's fees payable, and the remainder held in the order's escrow account for the seller.
+
+<LedgerSchema schema="marketplace-payouts" tx="ORDER_PAYMENT_CAPTURED" />
+</DocStep>
+<DocStep title="PSP Settlement">
+`PSP_SETTLEMENT` records the daily cash sweep: the platform's operating bank account funds the PSP settlement receivable, and the PSP returns the fees it retained. This clears the receivable that capture left running negative.
+
+<LedgerSchema schema="marketplace-payouts" tx="PSP_SETTLEMENT" />
+</DocStep>
+</DocSteps>
+
+## Seller Funds Release & Payout
+
+Once delivery is confirmed, the seller's escrowed funds are released and become eligible for payout.
+
+<DocSteps>
+<DocStep title="Release">
+`SELLER_FUNDS_RELEASE` moves the held order funds out of escrow and into the seller's `payable` balance once delivery is confirmed. The funds are now part of what the platform owes the seller.
+
+<LedgerSchema schema="marketplace-payouts" tx="SELLER_FUNDS_RELEASE" />
+</DocStep>
+<DocStep title="Initiate Payout">
+`SELLER_PAYOUT_INITIATE` runs as part of the weekly payout batch: it reserves an amount from the seller's `payable` into the `payout:pending` staging account, so it can no longer be spent while the transfer is in flight.
+
+<LedgerSchema schema="marketplace-payouts" tx="SELLER_PAYOUT_INITIATE" />
+</DocStep>
+<DocStep title="Settle Payout">
+`SELLER_PAYOUT_SETTLE` completes the cycle once the bank transfer is confirmed: the reserved amount moves from `payout:pending` to the platform's `banks` payout account.
+
+<LedgerSchema schema="marketplace-payouts" tx="SELLER_PAYOUT_SETTLE" />
+</DocStep>
+</DocSteps>
+
+If a reserved payout fails before settling, `SELLER_PAYOUT_RETURN` reverses the reservation by sending the in-flight amount from `payout:pending` back to the seller's `payable`.
+
+<LedgerSchema schema="marketplace-payouts" tx="SELLER_PAYOUT_RETURN" />
+
+### Multi-Currency Payout
+
+When the seller is paid out in a different currency than they earned, `MULTI_CURRENCY_PAYOUT` crosses the payable through a per-conversion exchange account at the treasury rate. The platform's `revenue:fx` captures the spread, and the converted remainder lands in the seller's `payout:pending`.
+
+<LedgerSchema schema="marketplace-payouts" tx="MULTI_CURRENCY_PAYOUT" />
+
+## Refunds & Chargebacks
+
+Refunds and chargebacks both claw funds back toward the PSP, but they differ in how the loss is allocated.
+
+<DocSteps>
+<DocStep title="Refund">
+`REFUND` returns a past order to the buyer. The gross is sourced through a waterfall: first the seller's net share from `payable`, then the platform's `commission` is given back, and any remaining shortfall is absorbed into the platform's `expense:refunds`. The funds flow to the PSP settlement account.
+
+<LedgerSchema schema="marketplace-payouts" tx="REFUND" />
+</DocStep>
+<DocStep title="Chargeback">
+`CHARGEBACK` handles a buyer dispute. The full gross is charged against the seller's `payable` first, with the platform absorbing any shortfall into `expense:chargebacks`. The funds flow to the PSP settlement account.
+
+<LedgerSchema schema="marketplace-payouts" tx="CHARGEBACK" />
+</DocStep>
+</DocSteps>
+
+## Who Absorbs the Loss
+
+Both `REFUND` and `CHARGEBACK` use a source waterfall that charges the seller first and the platform second. This encodes the marketplace's risk policy directly in the ledger:
+
+- The seller's `payable` is debited up to the amount they hold. If the seller still has a balance, the loss comes out of their funds.
+- Whatever the seller cannot cover falls through to a platform expense account — `expense:refunds` for the absorbed PSP fee on a refund, or `expense:chargebacks` for a dispute shortfall.
+
+Because the seller's `payable` is allowed to go negative on a refund, a dispute that lands after the seller has already been paid out leaves the seller with a negative balance — a debt the platform must recover on the next payout. The `sellers_with_a_negative_balance` query surfaces exactly these cases.
+
+## Queries
+
+The `queries` section defines reusable lookups across the marketplace:
+
+- `one_seller_s_outstanding_position` — every account and balance under one seller: released payable plus any in-flight payout.
+- `held_versus_available_for_one_seller` — the seller's available payable balance only, excluding per-order escrow.
+- `sellers_with_a_negative_balance` — seller payables gone negative after a refund landed post-payout; the amounts the platform must recover.
+- `total_seller_liability` — the sum of every seller's released payable, per asset.
+- `total_held_in_delivery_confirmation` — the sum of all per-order escrow holds awaiting delivery, per asset.
+- `platform_revenue_by_stream` — each platform revenue stream broken out (commission and FX spread), per asset.
+- `treasury_fx_position` — the platform's open FX book position from currency crossings, per asset.
+- `platform_absorbed_refund_and_chargeback_cost` — the platform's expense accounts for absorbed PSP fees and chargeback shortfalls, per asset.
+- `per_order_fee_and_commission_split` — how much flowed into commission, the PSP fee, and the held escrow for one order.
+- `revenue_earned_over_a_period` — volume into the platform revenue accounts over a reporting window.
+- `payout_throughput_for_one_seller` — how much money moved out to one seller over a period.
+- `psp_net_position` — the platform's full net position with one PSP: settlement receivable plus fees payable.
+- `psp_settlement_reconciliation` — the ledger side of the daily PSP settlement reconciliation.
+- `payout_bank_file_reconciliation` — the ledger side of the weekly payout reconciliation against the payout bank file.
+- `aging_escrow_holds` — per-order escrow holds with a lingering non-zero balance past the expected hold window.
+- `unresolved_reconciliation_differences` — the suspense differences account; non-zero means reconciliation deltas booked but not yet resolved.
+- `audit_trail_for_one_order` — every transaction tagged with one order id, in any direction: capture, release, refund, chargeback.
+
+These leverage the hierarchical account structure — filtering on `sellers::payable` matches across all sellers, and `escrow:orders::held` matches every per-order escrow account.

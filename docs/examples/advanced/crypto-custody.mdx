@@ -1,0 +1,220 @@
+---
+path: /examples/advanced/crypto-custody
+title: "Crypto Custody"
+section: Cookbook
+order: 10
+---
+
+import { DocCallout, DocSteps, DocStep } from "@formance/docs-framework"
+
+This example shows how to implement multi-asset crypto custody in Formance using a declarative ledger schema. Each customer holds entitlements across several assets — USD held at FBO banks alongside crypto held in pooled custody — while the platform reconciles those entitlements against the wallet and on-chain balances that back them. Every deposit, withdrawal, and trade is tracked through its confirmation lifecycle so that what customers are owed never drifts from what the platform actually holds.
+
+**Common use cases:**
+- **Custodial exchanges** holding customer fiat and crypto across multiple assets and networks
+- **Brokerage platforms** offering buy/sell against an OTC desk with a spread
+- **Wallet providers** managing pooled custody with on-chain reconciliation
+
+<DocCallout type="info">
+This is an illustrative example. Adapt the schema to your specific business requirements, regulatory obligations, and financial practices.
+</DocCallout>
+
+## Key Concepts
+
+- **Multi-Asset Entitlements** — Each customer holds balances across several assets (USD, BTC, ETH, multiple USDC variants) under a single `customers:$customerId` namespace. Cash and crypto live in separate sub-trees, each split between funds that are spendable and funds still in flight.
+- **Omnibus Custody vs. Per-Customer Entitlements** — Customer crypto balances are *entitlements*: a record of what the platform owes each customer. The actual coins sit pooled in `platform:custody` accounts — per-network hot wallets and per-custodian omnibus wallets — shared across all customers. The chart deliberately separates the two so a customer's spendable balance is never confused with where the asset physically lives.
+- **On-Chain Reconciliation** — Because entitlements and custody are tracked separately, the platform can continuously reconcile the sum of customer crypto entitlements against the sum of hot-wallet and omnibus backing, per asset. A divergence means an unbooked deposit, an untracked withdrawal, or a custody discrepancy.
+- **Deposit & Withdrawal Confirmation Latency** — On-chain deposits are credited as `confirming` the moment they are observed, then promoted to `available` once they reach confirmation depth. Fiat deposits move through a `pending` cash window while the ACH or wire clears. Withdrawals are reserved into per-withdrawal accounts before they settle to chain.
+- **In-Flight Tracking** — Dedicated accounts isolate every asset that is between systems: `cash:pending`, `crypto:confirming`, per-withdrawal `pending` reserves, in-transit FBO balances, and per-trade conversion accounts. Each gives precise visibility into what is committed but not yet final.
+
+## The Complete Schema
+
+This is the full ledger schema for a multi-asset crypto custody system. The sections below explain each part.
+
+<LedgerSchema schema="crypto-custody" />
+
+## Chart of Accounts
+
+The `chart` section defines the customer-facing entitlements, the platform-side custody and operational accounts, and the external endpoints money flows to and from.
+
+### Customers
+
+<LedgerSchema schema="crypto-custody" chart="customers" />
+
+**Normal credit accounts** — they represent the platform's liabilities to customers. Each customer namespace carries a `cash` sub-tree (`pending` while a fiat deposit clears, `available` once spendable) and a `crypto` sub-tree (`confirming` while an on-chain deposit awaits confirmation depth, `available` once spendable). The `withdrawals:$withdrawalId:pending` accounts isolate each outbound crypto withdrawal as its own reserve, so reserved funds can't be spent twice and each withdrawal's lifecycle is tracked independently.
+
+### FBO
+
+<LedgerSchema schema="crypto-custody" chart="fbo" />
+
+**Normal debit accounts** — the for-benefit-of bank accounts that hold the platform's real fiat. The `settled` balance is reconciled against the bank's statement; `inTransit` represents the ACH/wire clearing window before funds settle.
+
+### Platform
+
+<LedgerSchema schema="crypto-custody" chart="platform" />
+
+**Mixed nature accounts** — the operational backbone. `custody:hot:$network` holds per-network hot-wallet backing and `custody:$custodian:omnibus` holds pooled custodian backing; together they back the crypto entitlements customers hold. `treasury:gas:$network` tracks gas balances per network, `revenue:spread` accrues the spread earned on trades, `expense:networkFees` absorbs on-chain fees, and `suspense:deposits` parks incoming funds not yet attributed to a customer.
+
+### Counterparties
+
+<LedgerSchema schema="crypto-custody" chart="counterparties" />
+
+The `otcDesk` account represents the OTC desk that fills buy and sell orders — it goes negative under `allowing unbounded overdraft` while a trade is mid-flight and nets back as the legs settle.
+
+### Exchanges
+
+<LedgerSchema schema="crypto-custody" chart="exchanges" />
+
+Per-trade conversion accounts under `conv:$conversionId` hold the in-progress legs of a buy or sell while the OTC desk settles. Account metadata records the trade side, the customer, and the trade status. A non-zero balance after settlement is a stranded leg that needs a compensating entry.
+
+### External
+
+<LedgerSchema schema="crypto-custody" chart="external" />
+
+The external endpoints money flows to and from: `ach` and `wire` for fiat rails, and `$network:$address` for on-chain destinations.
+
+## Fiat Deposits & Withdrawals
+
+Customer fiat moves through a `pending` window while the bank rail clears.
+
+<DocSteps>
+<DocStep title="Deposit Initiate">
+`FIAT_DEPOSIT_INITIATE` — Customer USD arrives by ACH or wire and is credited as pending cash. The FBO `inTransit` account is allowed to overdraft, since the ledger entry is recorded before the bank statement confirms the funds.
+
+<LedgerSchema schema="crypto-custody" tx="FIAT_DEPOSIT_INITIATE" />
+</DocStep>
+<DocStep title="Deposit Settle">
+`FIAT_DEPOSIT_SETTLE` — The ACH or wire clears at the FBO bank. The settled backing is recognized and the customer's pending cash becomes available.
+
+<LedgerSchema schema="crypto-custody" tx="FIAT_DEPOSIT_SETTLE" />
+</DocStep>
+</DocSteps>
+
+Outbound fiat reserves the customer's available cash, then settles or returns:
+
+<DocSteps>
+<DocStep title="Withdrawal Initiate">
+`FIAT_WITHDRAWAL_INITIATE` — Reserve customer USD for an outbound ACH or wire by moving it into the FBO `inTransit` account.
+
+<LedgerSchema schema="crypto-custody" tx="FIAT_WITHDRAWAL_INITIATE" />
+</DocStep>
+<DocStep title="Withdrawal Settle">
+`FIAT_WITHDRAWAL_SETTLE` — The outbound transfer clears the FBO bank; in-transit backing moves to settled.
+
+<LedgerSchema schema="crypto-custody" tx="FIAT_WITHDRAWAL_SETTLE" />
+</DocStep>
+</DocSteps>
+
+If the transfer is rejected, `FIAT_WITHDRAWAL_RETURN` sends the reserved funds back to the customer's available cash and flags the entry as an adjustment.
+
+<LedgerSchema schema="crypto-custody" tx="FIAT_WITHDRAWAL_RETURN" />
+
+## Crypto Deposits
+
+On-chain deposits are credited as soon as they are observed, then promoted once confirmed.
+
+<DocSteps>
+<DocStep title="Deposit Detected">
+`CRYPTO_DEPOSIT_DETECTED` — An on-chain deposit is observed but has not yet reached confirmation depth. The custodian omnibus backing is drawn down (overdraft permitted) and the customer is credited as `confirming`.
+
+<LedgerSchema schema="crypto-custody" tx="CRYPTO_DEPOSIT_DETECTED" />
+</DocStep>
+<DocStep title="Deposit Confirmed">
+`CRYPTO_DEPOSIT_CONFIRMED` — The deposit reaches confirmation depth. The customer's confirming balance becomes available and spendable.
+
+<LedgerSchema schema="crypto-custody" tx="CRYPTO_DEPOSIT_CONFIRMED" />
+</DocStep>
+</DocSteps>
+
+<DocCallout type="warning">
+Block confirmations are asynchronous and can take seconds to minutes depending on the network. Crediting deposits as `confirming` gives customers immediate visibility while keeping unconfirmed funds out of the spendable balance.
+</DocCallout>
+
+## Trading (Buy & Sell via OTC Desk)
+
+Trades route through a per-trade conversion account so each leg is isolated until the OTC desk settles. The platform earns a spread on every fill.
+
+<DocSteps>
+<DocStep title="Buy Initiate">
+`BUY_TRADE_INITIATE` — Lock the customer's USD (gross of spread) into a per-trade conversion account. Metadata records the side, customer, and a pending status.
+
+<LedgerSchema schema="crypto-custody" tx="BUY_TRADE_INITIATE" />
+</DocStep>
+<DocStep title="Buy Settle">
+`BUY_TRADE_SETTLE` — The OTC desk delivers crypto. The spread is booked to `revenue:spread`, the remaining USD goes to the desk, the customer is credited their crypto, and the custodian omnibus backing is replenished from the desk.
+
+<LedgerSchema schema="crypto-custody" tx="BUY_TRADE_SETTLE" />
+</DocStep>
+</DocSteps>
+
+The sell flow mirrors the buy flow, exchanging crypto for USD:
+
+<DocSteps>
+<DocStep title="Sell Initiate">
+`SELL_TRADE_INITIATE` — Lock the customer's crypto into a per-trade conversion account.
+
+<LedgerSchema schema="crypto-custody" tx="SELL_TRADE_INITIATE" />
+</DocStep>
+<DocStep title="Sell Settle">
+`SELL_TRADE_SETTLE` — The OTC desk delivers USD. The crypto goes to the desk and replenishes omnibus backing, the spread is booked, and the remaining USD is credited to the customer's available cash.
+
+<LedgerSchema schema="crypto-custody" tx="SELL_TRADE_SETTLE" />
+</DocStep>
+</DocSteps>
+
+If a conversion leg is left stranded — a settlement never completes — `CONVERSION_COMPENSATE` reverses the held balance back to the customer and flags the entry as an adjustment.
+
+<LedgerSchema schema="crypto-custody" tx="CONVERSION_COMPENSATE" />
+
+## Crypto Withdrawals
+
+Outbound crypto is reserved into a per-withdrawal account before it is sent on-chain.
+
+<DocSteps>
+<DocStep title="Withdrawal Initiate">
+`CRYPTO_WITHDRAWAL_INITIATE` — Reserve the customer's crypto for an outbound on-chain withdrawal, moving it from available into a per-withdrawal pending reserve.
+
+<LedgerSchema schema="crypto-custody" tx="CRYPTO_WITHDRAWAL_INITIATE" />
+</DocStep>
+<DocStep title="Withdrawal Settle">
+`CRYPTO_WITHDRAWAL_SETTLE` — Send the crypto out of the per-network hot wallet to chain. The platform absorbs the network fee, booking it from `expense:networkFees` into the network's gas balance.
+
+<LedgerSchema schema="crypto-custody" tx="CRYPTO_WITHDRAWAL_SETTLE" />
+</DocStep>
+</DocSteps>
+
+If a reserved withdrawal is abandoned before it settles, `CRYPTO_WITHDRAWAL_CANCEL` releases the reserve back to the customer's available crypto and flags the entry as an adjustment.
+
+<LedgerSchema schema="crypto-custody" tx="CRYPTO_WITHDRAWAL_CANCEL" />
+
+To keep the hot wallet funded for outbound withdrawals, `CUSTODIAN_REFILL` moves crypto from a custodian into the hot wallet on the same network.
+
+<LedgerSchema schema="crypto-custody" tx="CUSTODIAN_REFILL" />
+
+## The Reconciliation Invariant
+
+Because customer entitlements and platform custody are tracked in separate account trees, the system maintains a continuous invariant: for every asset, the sum of all customer crypto entitlements must equal the sum of all platform backing (hot wallets plus custodian omnibus wallets).
+
+<DocCallout type="info">
+Entitlements (`customers::crypto:available`) are what the platform owes customers; backing (`platform:custody::omnibus` and `platform:custody:hot:`) is what the platform actually holds. These two totals should match per asset at all times. A divergence points to an unbooked deposit, an untracked withdrawal, or a custody discrepancy — surface it before it compounds.
+</DocCallout>
+
+## Queries
+
+The `queries` section defines reusable lookups for monitoring, reconciliation, and audit:
+
+- **`custody_vs_entitlement_parity`** — total customer crypto entitlement per asset, the entitlement side of the reconciliation check
+- **`hot_wallet_backing`** — backing held across all per-network hot wallets
+- **`per_customer_multi_asset_position`** — every account under one customer with its per-asset balance: the customer's full statement
+- **`total_customer_entitlement_per_asset`** — every customer's spendable cash and crypto summed per asset: the platform's total liability to customers
+- **`total_custody_backing_per_asset`** — all platform crypto backing across every custodian and hot wallet, summed per asset
+- **`crypto_reserved_for_pending_withdrawals`** — per-withdrawal reserves still holding a balance: crypto reserved but not yet settled or cancelled
+- **`funds_in_flight_pending_and_confirming`** — customer fiat in the clearing window and crypto awaiting confirmation: credited but not yet spendable
+- **`stuck_conversion_aging`** — per-trade conversion accounts with a non-zero balance: stranded legs needing a compensating entry
+- **`unattributed_deposit_suspense`** — incoming funds received but not yet attributed to a customer
+- **`daily_spread_revenue`** — volume into the spread revenue account over the daily window
+- **`daily_absorbed_network_fees`** — on-chain fees the platform absorbed over the daily window, read per native asset
+- **`per_customer_crypto_throughput`** — volume in and out of one customer's spendable crypto balance over a period
+- **`per_customer_transaction_audit`** — every transaction touching any account under one customer, for audit and dispute investigation
+- **`fbo_bank_statement_reconciliation`** — settled and in-transit USD backing at the FBO bank, matched against the bank's daily statement
+
+These leverage the hierarchical account structure — filtering on `customers::crypto:available` matches across all customers, and `platform:custody:hot:` matches every per-network hot wallet.

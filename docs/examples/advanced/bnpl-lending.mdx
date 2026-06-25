@@ -1,0 +1,163 @@
+---
+path: /examples/advanced/bnpl-lending
+title: "BNPL & Lending"
+section: Cookbook
+order: 11
+---
+
+import { DocCallout, DocSteps, DocStep } from "@formance/docs-framework"
+
+This example shows how to model Buy-Now-Pay-Later and installment lending in Formance using a declarative ledger schema. The platform pays merchants upfront while the shopper repays over a fixed installment schedule, so the ledger has to track per-installment principal receivables, accrued interest and late fees, merchant payables, PSP collection float, and the eventual write-off of defaulted balances — all at once.
+
+**Common use cases:**
+- **BNPL providers** financing point-of-sale purchases across a merchant network
+- **Consumer lenders** servicing fixed-term installment loans
+- **Embedded finance platforms** offering pay-over-time at checkout
+
+<DocCallout type="info">
+This is an illustrative example. Adapt the schema to your specific business requirements, regulatory obligations, and financial practices.
+</DocCallout>
+
+## Key Concepts
+
+- **The receivable is an asset** — When a purchase is financed, the principal the shopper owes is booked per installment under `borrowers:` as outstanding principal. These are **normal debit accounts**: their balance is what the shopper still owes, the live receivable on the platform's book.
+- **Per-installment schedule** — Each plan is split into numbered installments (`installments:1` through `installments:4`), and each installment tracks its own `principal`, `interest`, and `fees` components independently. This gives a precise amortization and repayment picture rather than a single rolled-up balance.
+- **Merchant settled upfront** — The merchant is owed the purchase price net of a merchant-discount fee the moment the plan originates, recorded as a payable under `counterparties:merchants:`. The platform settles that payable on its own weekly cadence while the shopper repays over time — the platform carries the financing risk in between.
+- **Earned-on-collection** — Interest and late fees are accrued onto the receivable and a parallel `earnedNotCollected` memo, but no revenue is recognized until the cash is actually collected. Recognized revenue therefore never includes accrued-but-uncollected interest.
+- **Write-off and recovery** — When an installment defaults, its outstanding principal is reclassified to `writtenOff` and the never-collected interest and fee receivables are cancelled against their memos with no P&L impact. Later recoveries post back against the charged-off balance, so the written-off total always reads net of recoveries.
+
+## The Complete Schema
+
+This is the full ledger schema for a BNPL and lending system. The sections below explain each part.
+
+<LedgerSchema schema="bnpl-lending" />
+
+## Chart of Accounts
+
+The `chart` section defines three account groups: the shopper receivables (`borrowers`), the external parties the platform owes or collects through (`counterparties`), and the platform's own cash and revenue (`platform`).
+
+### Borrowers
+
+<LedgerSchema schema="bnpl-lending" chart="borrowers" />
+
+Each borrower holds one or more `plans`, and each plan is broken into numbered `installments`. Every installment tracks three components — `principal`, `interest`, and `fees` — each with its own set of sub-accounts:
+
+- **`principal:outstanding`** — the receivable still owed. **Normal debit account** (an asset); its balance is live principal on the book.
+- **`principal:paid`** / **`principal:writtenOff`** — repaid principal, and principal charged off as a loss (recoveries post back here).
+- **`interest:accrued`** / **`fees:accrued`** — interest and late fees that have been assessed onto the receivable.
+- **`interest:earnedNotCollected`** / **`fees:earnedNotCollected`** — the memo that holds accrued income before it is recognized; under the earned-on-collection model it must not be treated as revenue until collected.
+- **`interest:paid`** / **`fees:paid`** — the collected portion of each component.
+
+### Counterparties
+
+<LedgerSchema schema="bnpl-lending" chart="counterparties" />
+
+The external parties the platform transacts with. `merchants:$merchantId:payable` is what the platform owes each merchant — a **liability** accrued at origination and drained to zero by the weekly settlement run. `psp:$pspId:collections:pending` is the PSP collection float: cash the payment processor has collected from shoppers on the platform's behalf but not yet remitted to the operating bank.
+
+### Platform
+
+<LedgerSchema schema="bnpl-lending" chart="platform" />
+
+The platform's own accounts. `banks:$bankId:operating` holds the cash position at the partner bank. The `revenue` group breaks recognized income out by stream: `revenue:interest`, `revenue:fees:late`, and `revenue:fees:merchantDiscount` — these follow standard income-statement conventions and only ever receive cash that has actually been collected.
+
+## Flows
+
+### Origination & Merchant Settlement
+
+<DocSteps>
+<DocStep title="Originate the financed purchase">
+`MERCHANT_PURCHASE_FINANCED` books the principal receivable across the four installments, accrues the merchant payable net of the merchant-discount fee, and retains that discount fee as revenue. The shopper now owes principal per installment; the merchant is owed the purchase price upfront.
+
+<LedgerSchema schema="bnpl-lending" tx="MERCHANT_PURCHASE_FINANCED" />
+</DocStep>
+<DocStep title="Settle the merchant">
+`MERCHANT_WEEKLY_SETTLEMENT` pays the merchant's accrued payable by ACH from the operating bank on the platform's weekly cadence, draining the payable to zero. This is independent of how far along the shopper is in repayment — the platform fronts the cash.
+
+<LedgerSchema schema="bnpl-lending" tx="MERCHANT_WEEKLY_SETTLEMENT" />
+</DocStep>
+</DocSteps>
+
+If a merchant ACH payout is returned, `MERCHANT_SETTLEMENT_RETURN` restores the merchant payable and reverses the operating-bank movement.
+
+<LedgerSchema schema="bnpl-lending" tx="MERCHANT_SETTLEMENT_RETURN" />
+
+### Interest & Fee Accrual
+
+Over the life of the plan, income is assessed onto the receivable without recognizing revenue. `INTEREST_ACCRUAL` accrues interest on one installment into both `interest:accrued` (the receivable) and `interest:earnedNotCollected` (the memo).
+
+<LedgerSchema schema="bnpl-lending" tx="INTEREST_ACCRUAL" />
+
+`LATE_FEE_ASSESSED` does the same for a late fee, pushing it onto `fees:accrued` and `fees:earnedNotCollected`.
+
+<LedgerSchema schema="bnpl-lending" tx="LATE_FEE_ASSESSED" />
+
+<DocCallout type="info">
+Neither accrual touches a revenue account. Under the earned-on-collection model, interest and fees only become revenue at the moment the cash is collected — until then they live in the `earnedNotCollected` memo.
+</DocCallout>
+
+### Installment Repayment
+
+<DocSteps>
+<DocStep title="Collect via PSP autopay">
+`INSTALLMENT_COLLECTION` collects an installment through the PSP card autopay and applies a fee-interest-principal waterfall: incoming cash clears outstanding fees first, then interest, then principal. The collected fee and interest portions are recognized as revenue into `revenue:fees:late` and `revenue:interest`.
+
+<LedgerSchema schema="bnpl-lending" tx="INSTALLMENT_COLLECTION" />
+</DocStep>
+<DocStep title="Reverse a return or chargeback">
+`INSTALLMENT_COLLECTION_RETURN` reverses a returned or charged-back collection: it restores the receivables, removes the PSP-float cash, and reverses the interest and fee revenue that had been recognized.
+
+<LedgerSchema schema="bnpl-lending" tx="INSTALLMENT_COLLECTION_RETURN" />
+</DocStep>
+<DocStep title="Remit PSP float to the bank">
+`PSP_REMITTANCE` settles collected card payments from the PSP into the operating bank, clearing the PSP collection float and growing the operating-bank backing.
+
+<LedgerSchema schema="bnpl-lending" tx="PSP_REMITTANCE" />
+</DocStep>
+</DocSteps>
+
+### Default, Write-Off & Recovery
+
+When an installment hits 90 days past due, `PLAN_WRITE_OFF` charges it off: outstanding principal is reclassified to `principal:writtenOff`, and the never-collected interest and fee receivables are cancelled against their `earnedNotCollected` memos. Because no interest or fees were ever recognized as revenue, the write-off has no P&L impact beyond the principal loss.
+
+<LedgerSchema schema="bnpl-lending" tx="PLAN_WRITE_OFF" />
+
+If the platform later recovers part of a charged-off balance, `RECOVERY` posts the recovered cash (via the PSP float) back against `principal:writtenOff`, reducing the charged-off balance toward zero.
+
+<LedgerSchema schema="bnpl-lending" tx="RECOVERY" />
+
+## Why Accrue Separately From Recognizing Revenue
+
+Splitting `accrued` from `earnedNotCollected`, and recognizing revenue only on collection, keeps the income statement honest. Interest and late fees sit on the receivable as something the shopper owes, but they do not inflate revenue while they remain uncollected. If a plan defaults, the write-off simply cancels those uncollected receivables against their memos — there is no revenue to reverse, because none was ever recognized. The only loss that hits the book is the principal that was actually advanced, which is exactly the charged-off principal (net of any recovery posted back).
+
+## Queries
+
+The `queries` section defines reusable lookups across servicing, accounting, and reconciliation:
+
+**Per-plan and per-shopper servicing**
+- `outstanding_principal_for_one_plan` — each installment's outstanding principal for one plan: what principal is still owed.
+- `full_schedule_for_one_plan` — every installment-component account for one plan (principal, interest, fees across all states): the complete amortization and repayment picture in one read.
+- `everything_for_one_shopper` — every account and balance for one shopper across all of their plans and installments.
+- `charged_off_principal_for_one_plan` — the charged-off principal for one plan, already net of any recovery posted back.
+
+**Book-wide accounting totals**
+- `total_outstanding_principal` — live principal receivable across the entire book.
+- `interest_accrued_not_yet_collected` — interest accrued but not yet recognized as revenue.
+- `late_fees_accrued_not_yet_collected` — late fees accrued but not yet recognized as revenue.
+- `total_charged_off_principal_net_of_recoveries` — the single platform loan-loss figure, net of recoveries.
+- `recognized_interest_revenue` — interest actually collected (never accrued-but-uncollected interest).
+- `recognized_late_fee_revenue` — late fees actually collected.
+- `revenue_by_stream` — every platform revenue account broken out by stream (interest, late fees, merchant discount).
+
+**Counterparty and cash positions**
+- `merchant_payable_for_one_merchant` — what the platform currently owes one merchant, the amount the next weekly ACH will drain.
+- `total_merchant_payable` — total merchant liability the weekly settlement run discharges.
+- `psp_collection_float` — cash the PSP has collected but not yet remitted.
+- `operating_bank_cash_position` — cash the platform holds at the partner bank.
+
+**Operational worklists**
+- `open_installment_receivables` — every outstanding-principal account that still carries a balance, the set of installments not yet fully collected.
+- `charged_off_balances_outstanding` — charged-off installments that still carry a balance, the collections follow-up worklist.
+
+**Daily reconciliation volumes**
+- `psp_collections_received_today` — volume into the PSP collection float over the day, matched against the PSP's daily collection report.
+- `merchant_settlement_outflow_today` — volume out of the merchant payable over the day, matched against the day's ACH file.

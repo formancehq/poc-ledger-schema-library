@@ -1,0 +1,60 @@
+---
+path: /examples/advanced/ecommerce-platform
+title: "E-commerce Platform"
+section: Cookbook
+order: 12
+---
+
+import { DocCallout } from "@formance/docs-framework"
+
+This example shows how to model an e-commerce platform's chart of accounts in Formance — capturing customer orders, splitting each sale between the platform and its merchants, and tracking the funds owed out to sellers. The schema focuses on the **account structure**: where money sits at each step of an order's life, from a customer's stored-value wallet through per-order capture staging to a merchant's settled earnings.
+
+**Common use cases:**
+- **Online marketplaces** splitting each order between platform fees and merchant earnings
+- **Retail platforms** holding customer stored value and reconciling captured orders
+- **Multi-merchant storefronts** tracking what is owed to each seller and what has settled
+
+<DocCallout type="info">
+This is an illustrative example focused on the chart of accounts. Adapt the schema to your specific business requirements, regulatory obligations, and financial practices. For end-to-end transaction patterns (split, escrow, payout), see the [Marketplace Payouts](/examples/advanced/marketplace-payouts) cookbook.
+</DocCallout>
+
+## Key Concepts
+
+- **Customer Wallets** — Each customer holds a stored-value `wallet`, a liability the platform owes the customer. The `customer_wallet` metadata type tags these accounts so they can be filtered and reported as a class.
+- **Per-Order Staging** — Every order moves through a `pending` then `captured` account keyed by `$order_id`. Keeping the lifecycle in dedicated per-order accounts makes the state of any single order explicit and auditable: a non-zero `pending` balance means an authorization that has not yet been captured.
+- **Merchant Earnings vs Settlements** — A merchant's `earnings` records what they have accrued from captured orders; `settlements` records what has actually been paid out. The gap between the two is the platform's outstanding liability to that merchant.
+- **Platform Books** — The platform's own accounts isolate its economics: `fees` for commission revenue, `taxes:vat` for collected tax held until remittance, and `refunds:pool` as the funding source for buyer refunds.
+
+## The Complete Schema
+
+This is the full ledger schema for an e-commerce platform.
+
+<LedgerSchema schema="ecommerce-platform" />
+
+## Chart of Accounts
+
+The `chart` section defines four account groups: customers, merchants, orders, and the platform's own books.
+
+### Customers
+
+<LedgerSchema schema="ecommerce-platform" chart="customers" />
+
+**Normal credit accounts** — each customer's `wallet` is stored value the platform owes them, keyed by `$customer_id`. The `customer_wallet` metadata type marks the account class for reporting.
+
+### Merchants
+
+<LedgerSchema schema="ecommerce-platform" chart="merchants" />
+
+**Normal credit accounts**, keyed by `$merchant_id`. `earnings` accrues the merchant's share of captured orders; `settlements` records funds already paid out. Outstanding liability to a merchant is `earnings` minus what has flowed to `settlements`.
+
+### Orders
+
+<LedgerSchema schema="ecommerce-platform" chart="orders" />
+
+Per-order staging keyed by `$order_id`. An order is authorized into `pending` and moves to `captured` when payment is taken. A lingering `pending` balance flags an authorization that was never captured.
+
+### Platform
+
+<LedgerSchema schema="ecommerce-platform" chart="platform" />
+
+The platform's own books: `fees` records commission revenue, `taxes:vat` holds collected VAT until it is remitted to the tax authority, and `refunds:pool` funds buyer refunds.

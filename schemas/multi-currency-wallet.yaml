@@ -7,6 +7,7 @@ meta:
     - "wallet"
     - "fx"
     - "multi-currency"
+  docsUrl: "https://docs.formance.com/examples/advanced/multi-currency-wallet"
 chart:
   users:
     $user_id:

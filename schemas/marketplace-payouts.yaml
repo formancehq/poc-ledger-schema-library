@@ -7,6 +7,7 @@ meta:
     - "marketplace"
     - "payouts"
     - "chargebacks"
+  docsUrl: "https://docs.formance.com/examples/advanced/marketplace-payouts"
 chart:
   sellers:
     $seller_id:

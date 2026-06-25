@@ -1,0 +1,209 @@
+---
+path: /examples/advanced/neobank-fbo
+title: "Neobank (FBO)"
+section: Cookbook
+order: 7
+---
+
+import { DocCallout, DocSteps, DocStep } from "@formance/docs-framework"
+
+This example shows how to model a neobank built on a single FBO ("For Benefit Of") bank account in Formance using a declarative ledger schema. The neobank holds all customer money commingled in one omnibus account at a sponsor bank, while the ledger tracks each customer's slice as a separate liability balance. Every customer movement — deposits, card spend, peer-to-peer transfers, withdrawals, and early-access advances — flows through the same pooled cash position, and a daily FBO reconciliation proves the ledger's view of pooled cash against the sponsor's reported statement.
+
+**Common use cases:**
+- **Neobanks and BaaS programs** operating customer accounts on top of a sponsor-bank FBO
+- **Earned-wage / early-access products** that front advances against an expected deposit
+- **Card programs** managing authorization holds, captures, and refunds against pooled cash
+
+<DocCallout type="info">
+This is an illustrative example. Adapt the schema to your specific business requirements, regulatory obligations, and financial practices.
+</DocCallout>
+
+## Key Concepts
+
+- **FBO Pooling** — All customer funds sit commingled in one bank account (`platform:banks:sponsor:fbo:settled`). The ledger is the system of record for who owns what inside that pool; the bank only ever sees the aggregate.
+- **Per-Customer Liability Balances** — Each customer has an `available` balance plus subtrees for authorization `holds`, in-flight `withdrawals`, and `advances`. These are **liabilities** — the credit balance is what the platform owes that customer.
+- **Daily FBO Reconciliation** — The single asset-side account (`platform:banks:sponsor:fbo:settled`) is reconciled every day against the sponsor's reported FBO statement. It runs negative; its absolute value is the ledger's view of settled cash in the pool, and total positive claims against it form an internal solvency check.
+- **In-Flight Isolation** — Authorization holds, pending ACH withdrawals, and outstanding advances each get their own per-reference account, so funds that are earmarked, settling, or fronted are never confused with spendable balance.
+- **Platform Float Separation** — The platform's own money (the FBO `buffer` and the corporate operating account) lives outside the `customers` root, giving structural proof that platform funds are distinct from customer funds.
+
+## The Complete Schema
+
+This is the full ledger schema for a neobank FBO system. The sections below explain each part.
+
+<LedgerSchema schema="neobank-fbo" />
+
+## Chart of Accounts
+
+The `chart` section defines two top-level groups: `customers` (the per-customer liability subtree) and `platform` (banks, revenue, and expense accounts the platform controls).
+
+### Customers
+
+<LedgerSchema schema="neobank-fbo" chart="customers" />
+
+**Normal credit accounts** — these represent your liabilities to customers. Each `$customerId` has an `available` balance (spendable funds), a `holds` subtree (one account per card authorization, by `$authId`), a `withdrawals` subtree (one `pending` account per outbound ACH, by `$withdrawalId`), and an `advances` subtree (one `outstanding` receivable per advance, by `$advanceId`). The advance `outstanding` accounts run negative while open — they are receivables the platform fronts — and drain to zero when the expected deposit settles.
+
+### Platform
+
+<LedgerSchema schema="neobank-fbo" chart="platform" />
+
+**Mixed nature accounts** controlled by the platform. The sponsor FBO `settled` account is the asset/nostro position: it represents the pooled cash held at the sponsor bank and runs negative as the ledger books credits to customers ahead of bank settlement. The FBO `buffer` and corporate `operating`/`settled` accounts hold platform float. `revenue:interest` captures FBO interest recognized as platform revenue, and `expense:advanceLoss` absorbs unrecoverable advances.
+
+## Deposit Flow
+
+Inbound funds settle into the FBO and are credited to the customer's available balance. The `allowing unbounded overdraft` clause on the FBO settled account lets it go negative — this is intentional, reflecting that the ledger books the customer credit before bank reconciliation.
+
+<DocSteps>
+<DocStep title="ACH Direct Deposit">
+`ACH_DIRECT_DEPOSIT` settles an inbound ACH direct deposit into the FBO and credits the customer's available balance.
+
+<LedgerSchema schema="neobank-fbo" tx="ACH_DIRECT_DEPOSIT" />
+</DocStep>
+<DocStep title="Incoming Wire">
+`INCOMING_WIRE` does the same for an inbound wire — funds settle into the FBO and credit the customer.
+
+<LedgerSchema schema="neobank-fbo" tx="INCOMING_WIRE" />
+</DocStep>
+<DocStep title="Deposit Return">
+`ACH_DEPOSIT_RETURN` reverses a settled ACH deposit returned by the originating bank, debiting the customer's available balance back to the FBO.
+
+<LedgerSchema schema="neobank-fbo" tx="ACH_DEPOSIT_RETURN" />
+</DocStep>
+</DocSteps>
+
+## Card Flow
+
+Card spend follows the authorization-then-capture lifecycle. An authorization places a hold on available balance; the hold is later captured, reversed, or expired.
+
+<DocSteps>
+<DocStep title="Authorization">
+`CARD_AUTH` places a hold on the customer's available balance, moving funds into a per-authorization `holds:$authId` account.
+
+<LedgerSchema schema="neobank-fbo" tx="CARD_AUTH" />
+</DocStep>
+<DocStep title="Capture">
+`CARD_CAPTURE` settles against an authorization: the captured amount leaves the FBO and the remainder of the hold is restored to available.
+
+<LedgerSchema schema="neobank-fbo" tx="CARD_CAPTURE" />
+</DocStep>
+<DocStep title="Reversal">
+`CARD_AUTH_REVERSE` is a merchant-initiated reversal of an authorization — the hold returns to available.
+
+<LedgerSchema schema="neobank-fbo" tx="CARD_AUTH_REVERSE" />
+</DocStep>
+<DocStep title="Expiry">
+`CARD_AUTH_EXPIRE` releases an unused authorization: the remaining hold balance returns to available.
+
+<LedgerSchema schema="neobank-fbo" tx="CARD_AUTH_EXPIRE" />
+</DocStep>
+</DocSteps>
+
+A merchant refund of a prior capture is credited back through `CARD_REFUND`, restoring funds from the FBO to the customer.
+
+<LedgerSchema schema="neobank-fbo" tx="CARD_REFUND" />
+
+## Peer-to-Peer Transfer
+
+`P2P_TRANSFER` moves funds instantly between two customers' available balances. Because both customers share the same FBO pool, the transfer is purely in-ledger and never touches the bank.
+
+<LedgerSchema schema="neobank-fbo" tx="P2P_TRANSFER" />
+
+## Withdrawal Flow
+
+Outbound ACH withdrawals are a two-step process so that funds being withdrawn can't be spent while in flight.
+
+<DocSteps>
+<DocStep title="Reserve">
+`ACH_WITHDRAWAL_RESERVE` earmarks funds from the customer's available balance into a per-withdrawal `withdrawals:$withdrawalId:pending` account.
+
+<LedgerSchema schema="neobank-fbo" tx="ACH_WITHDRAWAL_RESERVE" />
+</DocStep>
+<DocStep title="Settle">
+`ACH_WITHDRAWAL_SETTLE` completes the cycle once the outbound ACH settles — pending funds leave the FBO.
+
+<LedgerSchema schema="neobank-fbo" tx="ACH_WITHDRAWAL_SETTLE" />
+</DocStep>
+</DocSteps>
+
+If the outbound ACH fails or is returned, `ACH_WITHDRAWAL_RETURN` restores the pending funds to the customer's available balance.
+
+<LedgerSchema schema="neobank-fbo" tx="ACH_WITHDRAWAL_RETURN" />
+
+## Advance Flow
+
+Early-access advances let the platform front money against an expected deposit, booked as a receivable on a per-advance `advances:$advanceId:outstanding` account.
+
+<DocSteps>
+<DocStep title="Origination">
+`ADVANCE_ORIGINATION` fronts the advance: the outstanding receivable goes negative and the customer's available balance is credited.
+
+<LedgerSchema schema="neobank-fbo" tx="ADVANCE_ORIGINATION" />
+</DocStep>
+<DocStep title="Settlement">
+`ADVANCE_SETTLEMENT` applies the expected deposit when it settles, repaying the advance first and crediting any remainder to available.
+
+<LedgerSchema schema="neobank-fbo" tx="ADVANCE_SETTLEMENT" />
+</DocStep>
+<DocStep title="Write-Off">
+`ADVANCE_WRITEOFF` recognizes an unrecoverable advance as a loss against `platform:expense:advanceLoss` and funds the FBO from the corporate bank.
+
+<LedgerSchema schema="neobank-fbo" tx="ADVANCE_WRITEOFF" />
+</DocStep>
+</DocSteps>
+
+## Platform Operations
+
+Two recurring platform movements run on a machine interpreter. `FBO_INTEREST_SWEEP` recognizes monthly sponsor interest on the FBO as platform revenue.
+
+<LedgerSchema schema="neobank-fbo" tx="FBO_INTEREST_SWEEP" />
+
+`OPERATING_MOVEMENT_TO_CORPORATE` and `OPERATING_MOVEMENT_TO_FBO` sweep platform float between the FBO buffer and the corporate bank, keeping operating cash topped up in either direction.
+
+<LedgerSchema schema="neobank-fbo" tx="OPERATING_MOVEMENT_TO_CORPORATE" />
+
+<LedgerSchema schema="neobank-fbo" tx="OPERATING_MOVEMENT_TO_FBO" />
+
+## The Daily FBO Reconciliation
+
+The FBO settled account is the heart of the model. Because the ledger books customer credits before the bank confirms settlement, `platform:banks:sponsor:fbo:settled` runs negative — its absolute value is the ledger's view of settled cash in the pool. Reconciliation compares two figures every day:
+
+- The **asset side** — the magnitude of the FBO settled account, matched against the sponsor's reported FBO statement balance.
+- The **claims side** — the sum of every positive claim against that cash: all customer available, held, and pending-withdrawal balances, plus the platform's FBO float and accrued interest.
+
+<DocCallout type="info">
+The claims against the FBO, plus outstanding advances, should equal the FBO backing. A mismatch signals an unreconciled movement or a missing posting — making the FBO settled account a key health indicator to monitor daily.
+</DocCallout>
+
+## Queries
+
+The `queries` section defines reusable lookups for reconciliation, per-customer reads, and operational monitoring:
+
+**Reconciliation and solvency**
+- `daily_fbo_reconciliation_invariant_1` — the FBO settled account to reconcile against the sponsor statement
+- `total_claims_against_the_fbo_internal_solvency_check` — every positive claim against FBO cash, for the internal solvency check
+
+**Per-customer reads**
+- `customer_available_balance` — one customer's spendable balance right now
+- `customer_total_holds` — all current authorization holds for one customer
+- `customer_full_position` — every account in one customer's subtree in a single read
+
+**Platform liability and float**
+- `total_customer_spendable_and_held_liability` — the headline platform liability across all customers
+- `total_platform_float` — the platform's own money, provably separate from customer funds
+
+**Advances**
+- `outstanding_advances` — every advance still carrying a balance
+- `aging_advances` — advances still open after the expected-deposit window
+- `total_advance_exposure` — the platform's total early-access advance exposure
+
+**In-flight and volumes**
+- `pending_withdrawals_in_flight` — outbound ACH earmarked but not yet settled or returned
+- `card_capture_volume` — capture cash leaving the FBO over a window
+- `p2p_transfer_volume` — peer-to-peer volume through customer available balances over a window
+- `monthly_interest_revenue` — FBO interest recognized to revenue over the month
+- `advance_loss_to_date` — realized loss on unrecovered advances
+
+**Audit**
+- `customer_transaction_audit` — every transaction touching a customer's subtree, for drill-down
+- `authorization_lifecycle_audit` — every transaction for one card authorization
+
+These leverage the hierarchical account structure — filtering on `customers::available` matches every customer's spendable balance, and `customers::advances::outstanding` matches every advance receivable.
