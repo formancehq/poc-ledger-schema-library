@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=./ledger-schema.schema.json
 meta:
   slug: crypto-custody
-  order: 10
+  order: 9
   name: "Crypto Custody"
   description: "Multi-asset entitlements with on-chain reconciliation."
   tags:

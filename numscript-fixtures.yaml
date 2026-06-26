@@ -115,18 +115,6 @@ fixtures:
       ph:alice:
         USD/2: 1000000
 
-  # ── Token swap (multi-currency) ───────────────────────────────
-
-  token-swap-eur-usd:
-    description: Convert 1000 EUR to USD via pivot at 1.10 rate.
-    variables:
-      user_id: "u-123"
-      eur_amount: "EUR/2 100000"
-      usd_amount: "USD/2 110000"
-    balances:
-      users:u-123:eur:
-        EUR/2: 1000000
-
   # ── Generic high-balance world (catch-all for playground links) ──
 
   generic:

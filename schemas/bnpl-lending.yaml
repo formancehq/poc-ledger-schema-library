@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=./ledger-schema.schema.json
 meta:
   slug: bnpl-lending
-  order: 11
+  order: 10
   name: "BNPL & Lending"
   description: "Installment plans, accrual, write-off, merchant settlement."
   tags:
