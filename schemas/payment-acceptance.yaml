@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=./ledger-schema.schema.json
+# yaml-language-server: $schema=https://ds.formance.com/schemas/ledger-schema/extended
 meta:
   slug: payment-acceptance
   order: 3

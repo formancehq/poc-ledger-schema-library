@@ -10,7 +10,7 @@ documentation that goes with them. Consumed at build time by the platform-ui
 ```
 schemas/
   <slug>.yaml                  one self-contained template per file (the data SSOT)
-  ledger-schema.schema.json    canonical JSON Schema (draft 2020-12) for the templates
+  ledger-schema.schema.json    local JSON Schema (draft 2020-12) used by the CI gate
   numscript-fixtures.schema.json
 docs/
   examples/**/<slug>.mdx       per-template documentation pages (the prose SSOT)
@@ -47,6 +47,25 @@ truth for display order**. The studio gallery sorts templates by it ascending
 the MDX must **not** hand-declare `order:` (the validator rejects it). Both
 products therefore order templates identically, and reordering is a one-line
 edit to a schema. Renumber deliberately; `pnpm validate` enforces uniqueness.
+
+## The ledger schema contract
+
+The canonical JSON Schema for ledger schemas is hosted by the
+[design system](https://github.com/formancehq/design-system) in two variants:
+
+| Variant | URL | Use for |
+| --- | --- | --- |
+| **base** | https://ds.formance.com/schemas/ledger-schema | Authoring schemas for direct ledger submission — strict, rejects unknown top-level keys |
+| **extended** | https://ds.formance.com/schemas/ledger-schema/extended | Library / docs entries — base plus a top-level `meta` block for slugs, ordering, and doc links |
+
+Every template in this repo declares the **extended** variant via its
+`# yaml-language-server: $schema=…` header, so editors validate against the
+hosted contract as you type. The CI gate (`pnpm validate`) still runs against
+the local `schemas/ledger-schema.schema.json`.
+
+To play around with ledger schemas interactively — browse the template gallery,
+edit a schema with live validation — head to
+[studio.formance.com](https://studio.formance.com).
 
 ## Tooling
 

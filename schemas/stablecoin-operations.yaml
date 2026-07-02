@@ -1,14 +1,14 @@
-# yaml-language-server: $schema=./ledger-schema.schema.json
+# yaml-language-server: $schema=https://ds.formance.com/schemas/ledger-schema/extended
 meta:
   slug: stablecoin-operations
   order: 5
-  name: "Stablecoin On-Ramp & Off-Ramp Operations"
-  description: "Onramp/offramp business: PSP fiat ↔ stablecoin via pivot accounts, with circulation tracking."
+  name: 'Stablecoin On-Ramp & Off-Ramp Operations'
+  description: 'Onramp/offramp business: PSP fiat ↔ stablecoin via pivot accounts, with circulation tracking.'
   tags:
-    - "stablecoin"
-    - "onramp-offramp"
-    - "psp"
-  docsUrl: "https://docs.formance.com/examples/advanced/stablecoin-operations"
+    - 'stablecoin'
+    - 'onramp-offramp'
+    - 'psp'
+  docsUrl: 'https://docs.formance.com/examples/advanced/stablecoin-operations'
 chart:
   psp:
     $psp_id:
@@ -17,7 +17,7 @@ chart:
         .self: {}
         .metadata:
           type:
-            default: "payment_provider"
+            default: 'payment_provider'
 
   banks:
     $bank_id:
@@ -26,7 +26,7 @@ chart:
         .self: {}
         .metadata:
           type:
-            default: "nostro"
+            default: 'nostro'
       withdrawal:
         $transfer_ref:
           .self: {}
@@ -38,7 +38,7 @@ chart:
         .self: {}
         .metadata:
           type:
-            default: "on_chain_supply"
+            default: 'on_chain_supply'
       mint_in_flight:
         .self: {}
       burn_in_flight:
@@ -51,7 +51,7 @@ chart:
         .self: {}
         .metadata:
           type:
-            default: "user_stablecoin_balance"
+            default: 'user_stablecoin_balance'
 
   platform:
     pivot:
@@ -59,7 +59,7 @@ chart:
         .self: {}
         .metadata:
           type:
-            default: "conversion_pivot"
+            default: 'conversion_pivot'
     expenses:
       payment_fees:
         .self: {}
@@ -77,10 +77,8 @@ chart:
 transactions:
   ONRAMP_STEP1_PAYMENT_AUTH_CREDIT:
     description: >
-      Payment authorization and immediate stablecoin credit. User initiates
-      a fiat payment (card, instant payment) and receives stablecoins
-      immediately. PSP fiat flows through a pivot account that converts it
-      into the equivalent stablecoin for the user.
+      Payment authorization and immediate stablecoin credit. User initiates a fiat payment (card, instant payment) and receives stablecoins immediately. PSP fiat flows through a pivot account that
+      converts it into the equivalent stablecoin for the user.
     script: |
       #![feature("experimental-account-interpolation")]
       vars {
@@ -108,10 +106,8 @@ transactions:
 
   ONRAMP_STEP2_MINT_INSTRUCTION:
     description: >
-      Blockchain mint instruction. Platform initiates the mint transaction
-      on the blockchain to create the stablecoins that back the user's
-      balance. Moves the stablecoin obligation from the pivot account to
-      a mint in-flight tracking account.
+      Blockchain mint instruction. Platform initiates the mint transaction on the blockchain to create the stablecoins that back the user's balance. Moves the stablecoin obligation from the pivot
+      account to a mint in-flight tracking account.
     script: |
       #![feature("experimental-account-interpolation")]
       vars {
@@ -133,9 +129,7 @@ transactions:
 
   ONRAMP_STEP3_MINT_CONFIRMATION:
     description: >
-      Blockchain mint confirmation. The stablecoins are now officially in
-      circulation on-chain, backing the user's balance. The in-flight mint
-      resolves as circulating supply increases.
+      Blockchain mint confirmation. The stablecoins are now officially in circulation on-chain, backing the user's balance. The in-flight mint resolves as circulating supply increases.
     script: |
       #![feature("experimental-account-interpolation")]
       vars {
@@ -157,9 +151,7 @@ transactions:
 
   ONRAMP_STEP4_PSP_SETTLEMENT:
     description: >
-      PSP/bank settlement. The PSP settles fiat to your bank account,
-      typically net of processing fees. Resolves the fiat side of the
-      pivot account, completing the full backing cycle.
+      PSP/bank settlement. The PSP settles fiat to your bank account, typically net of processing fees. Resolves the fiat side of the pivot account, completing the full backing cycle.
     script: |
       #![feature("experimental-account-interpolation")]
       vars {
@@ -186,9 +178,7 @@ transactions:
 
   OFFRAMP_STEP1_BURN_INSTRUCTION:
     description: >
-      Burn instruction. User requests fiat withdrawal and their stablecoins
-      are locked. Platform initiates a burn transaction on the blockchain to
-      permanently remove the tokens from circulation.
+      Burn instruction. User requests fiat withdrawal and their stablecoins are locked. Platform initiates a burn transaction on the blockchain to permanently remove the tokens from circulation.
     script: |
       #![feature("experimental-account-interpolation")]
       vars {
@@ -209,9 +199,8 @@ transactions:
 
   OFFRAMP_STEP2_BURN_CONFIRMATION:
     description: >
-      Burn confirmation. Blockchain confirms the burn transaction. Stablecoins
-      are permanently removed from circulation, and corresponding fiat is
-      released from the pivot account to pending withdrawal reserves.
+      Burn confirmation. Blockchain confirms the burn transaction. Stablecoins are permanently removed from circulation, and corresponding fiat is released from the pivot account to pending withdrawal
+      reserves.
     script: |
       #![feature("experimental-account-interpolation")]
       vars {
@@ -242,9 +231,8 @@ transactions:
 
   OFFRAMP_STEP3_FIAT_WITHDRAWAL:
     description: >
-      Fiat withdrawal. Platform initiates a bank transfer to send fiat to
-      the client. Moves funds from pending withdrawal reserves to an
-      in-flight withdrawal account tied to a specific transfer reference.
+      Fiat withdrawal. Platform initiates a bank transfer to send fiat to the client. Moves funds from pending withdrawal reserves to an in-flight withdrawal account tied to a specific transfer
+      reference.
     script: |
       #![feature("experimental-account-interpolation")]
       vars {
@@ -275,7 +263,7 @@ queries:
       pageSize: 1
     body:
       $match:
-        address: "clients:${client_id}:stablecoin"
+        address: 'clients:${client_id}:stablecoin'
 
   CIRCULATING_SUPPLY:
     description: Total circulating stablecoin supply across all networks
@@ -284,7 +272,7 @@ queries:
       pageSize: 100
     body:
       $match:
-        address: "blockchain::circulating"
+        address: 'blockchain::circulating'
 
   INFLIGHT_MINTS:
     description: All pending mint operations not yet confirmed on-chain
@@ -293,7 +281,7 @@ queries:
       pageSize: 100
     body:
       $match:
-        address: "blockchain::mint_in_flight"
+        address: 'blockchain::mint_in_flight'
 
   INFLIGHT_BURNS:
     description: All pending burn operations not yet confirmed on-chain
@@ -302,7 +290,7 @@ queries:
       pageSize: 100
     body:
       $match:
-        address: "blockchain::burn_in_flight"
+        address: 'blockchain::burn_in_flight'
 
   PENDING_WITHDRAWALS:
     description: Fiat pending withdrawal to clients
@@ -311,7 +299,7 @@ queries:
       pageSize: 1
     body:
       $match:
-        address: "platform:reserves:pending_withdrawal"
+        address: 'platform:reserves:pending_withdrawal'
 
   INFLIGHT_FIAT_WITHDRAWALS:
     description: All in-flight bank withdrawal transfers
@@ -320,7 +308,7 @@ queries:
       pageSize: 100
     body:
       $match:
-        address: "banks::withdrawal:"
+        address: 'banks::withdrawal:'
 
   PIVOT_BALANCE:
     description: Platform pivot account balance (should trend to zero when fully settled)
@@ -329,4 +317,4 @@ queries:
       pageSize: 1
     body:
       $match:
-        address: "platform:pivot:stablecoin_issuance"
+        address: 'platform:pivot:stablecoin_issuance'
