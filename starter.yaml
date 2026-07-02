@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://ds.formance.com/schemas/ledger-schema/extended
+# yaml-language-server: $schema=https://ds.formance.com/schemas/ledger-schema
 chart:
   cardholder:
     $account_id:
