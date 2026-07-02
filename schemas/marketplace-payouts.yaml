@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://ds.formance.com/schemas/ledger-schema/extended
 meta:
   slug: marketplace-payouts
-  order: 9
+  order: 8
   name: "Marketplace Payouts"
   description: "Order split, seller balances, chargeback absorption."
   tags:

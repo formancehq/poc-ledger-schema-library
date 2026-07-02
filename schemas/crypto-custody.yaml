@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://ds.formance.com/schemas/ledger-schema/extended
 meta:
   slug: crypto-custody
-  order: 10
+  order: 9
   name: "Crypto Custody"
   description: "Multi-asset entitlements with on-chain reconciliation."
   tags:
