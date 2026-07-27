@@ -2,15 +2,16 @@
   "name": "@formance/ledger-schema-library",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@9.15.0",
   "type": "module",
   "description": "Single source of truth for Formance ledger-schema templates (chart of accounts + Numscript transactions + queries), consumed by the platform-ui studio and the docs site.",
   "scripts": {
     "validate": "tsx tools/validate.ts"
   },
   "devDependencies": {
-    "ajv": "^8.18.0",
-    "js-yaml": "^4.1.0",
-    "tsx": "^4.19.0",
-    "@types/js-yaml": "^4.0.9"
+    "@types/js-yaml": "^4.0.9",
+    "ajv": "^8.20.0",
+    "js-yaml": "^4.3.0",
+    "tsx": "^4.23.1"
   }
 }
