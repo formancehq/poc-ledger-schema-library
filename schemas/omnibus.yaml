@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://ds.formance.com/schemas/ledger-schema/extended
 meta:
   slug: omnibus
-  order: 2
+  order: 1
   name: "Omnibus Account Management"
   description: "Single omnibus bank account with per-client sub-balances."
   tags:

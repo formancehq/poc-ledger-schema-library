@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://ds.formance.com/schemas/ledger-schema/extended
 meta:
   slug: payment-acceptance
-  order: 3
+  order: 2
   name: "Payment Card Acceptance Processing"
   description: "PSP capture, fees, and settlement into the merchant balance."
   tags:
