@@ -626,16 +626,19 @@ queries:
           metadata[event_type]: usage_consumption
   full_history_of_one_reservation:
     name: Full history of one reservation
-    description: Every event in one reservation's lifecycle (purchase, drawdowns, drawdown reversals,
-      expiry) via the reservation id every such template stamps into transaction metadata. Cold-path per-case
-      audit.
+    description: 'Every transaction in one reservation''s lifecycle: purchase, each drawdown and reversal,
+      and expiry. Scoped by exact account match on the reservation''s deferred-fee account (every lifecycle
+      event touches it), so it is customer-scoped by construction and two customers reusing a reservation
+      identifier can never see each other''s history. Cold per-case audit path, not a dashboard query.'
     resource: transactions
     vars:
+      customer_id:
+        type: string
       reservation_id:
         type: string
     body:
       $match:
-        metadata[reservation_id]: ${reservation_id}
+        account: customers:${customer_id}:reservations:${reservation_id}:fee:deferred
   transactions_for_one_usage_event:
     name: Transactions for one usage event
     description: The posting behind one metered usage event, plus any reversal issued against it (reversals
