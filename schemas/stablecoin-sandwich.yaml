@@ -564,15 +564,14 @@ queries:
   conversion_audit_trail:
     name: Conversion audit trail
     description: Every transaction posted for one conversion, matched on the exact per-conversion pivot
-      account (on-ramp or off-ramp side), so the result is scoped by the account hierarchy rather than
-      metadata alone.
+      account. ramp_side is 'onRamp' or 'offRamp' (the two pivot namespaces), so a conversion identifier
+      reused across sides can never produce an ambiguous trail.
     resource: transactions
     vars:
+      ramp_side:
+        type: string
       conversion_id:
         type: string
     body:
-      $or:
-      - $match:
-          account: exchanges:conv:onRamp:${conversion_id}
-      - $match:
-          account: exchanges:conv:offRamp:${conversion_id}
+      $match:
+        account: exchanges:conv:${ramp_side}:${conversion_id}

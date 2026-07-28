@@ -98,7 +98,9 @@ transactions:
       set_tx_meta("usage_id", $usage_id)
   USAGE_REVERSAL:
     description: >-
-      Reverses a prior consumption event (metering error or billing dispute); re-credits the customer
+      Reverses a prior consumption event (metering error or billing dispute); re-credits the customer.
+      Contract: $original_event_id MUST be the usage_id of the consumption being reversed; it is stamped
+      as adjusted_posting_event_id, which is how the usage-event audit query finds the reversal.
     script: |
       #![feature("experimental-account-interpolation")]
       vars {
