@@ -641,15 +641,21 @@ queries:
         account: customers:${customer_id}:reservations:${reservation_id}:fee:deferred
   transactions_for_one_usage_event:
     name: Transactions for one usage event
-    description: The posting behind one metered usage event, plus any reversal issued against it (reversals
-      stamp the original id as adjusted_posting_event_id). Cold-path per-case audit via promoted metadata.
+    description: The consumption transaction for one usage event plus any reversal that adjusted it, scoped
+      to the customer whose credits it drew (both legs touch that account, so the scope is complete and
+      a usage identifier can never surface another customer). Cold per-case audit path.
     resource: transactions
     vars:
+      customer_id:
+        type: string
       usage_id:
         type: string
     body:
-      $or:
+      $and:
       - $match:
-          metadata[usage_id]: ${usage_id}
-      - $match:
-          metadata[adjusted_posting_event_id]: ${usage_id}
+          account: customers:${customer_id}:credits:available
+      - $or:
+        - $match:
+            metadata[usage_id]: ${usage_id}
+        - $match:
+            metadata[adjusted_posting_event_id]: ${usage_id}

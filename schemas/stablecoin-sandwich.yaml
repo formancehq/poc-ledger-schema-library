@@ -533,10 +533,11 @@ queries:
   payout_audit_trail:
     name: Payout audit trail
     description: 'Every transaction carrying one payout reference: collection, both conversions, payout
-      initiation, settlement, and any return. The on-chain hop is NOT included, by design: chain transfers
-      batch many payouts and carry their own transfer_id, so audit that leg with transfer_audit_trail
-      using the transfer the payout system assigned. Metadata-filtered, so this is the cold per-case audit
-      path, not a dashboard query.'
+      initiation, settlement, and any return. payout_ref is the platform-minted end-to-end correlator
+      and MUST be globally unique (one collection funds one payout); the five lifecycle events touch five
+      different accounts, so this is deliberately the one metadata-correlated audit view. The on-chain
+      hop is NOT included: chain transfers batch many payouts, audit that leg with transfer_audit_trail.
+      Cold per-case audit path, not a dashboard query.'
     resource: transactions
     vars:
       payout_ref:
@@ -546,23 +547,32 @@ queries:
         metadata[payout_ref]: ${payout_ref}
   transfer_audit_trail:
     name: Transfer audit trail
-    description: Every transaction posted for one on-chain transfer (initiation, confirmation, or failure),
-      by transfer identifier. A chain transfer batches many payouts, so this is the audit path for the
-      middle leg that payout_audit_trail deliberately excludes.
+    description: 'Every transaction in one on-chain transfer''s lifecycle: initiation, then confirmation
+      or failure. Scoped by exact account match on the transfer''s per-chain in-transit account (all three
+      events touch it), so a transfer identifier reused on another chain can never appear in the result.
+      A chain transfer batches many payouts; this is the audit path for the middle leg that payout_audit_trail
+      deliberately excludes.'
     resource: transactions
     vars:
+      chain_id:
+        type: string
       transfer_id:
         type: string
     body:
       $match:
-        metadata[transfer_id]: ${transfer_id}
+        account: platform:treasury:chains:${chain_id}:transfers:${transfer_id}:pending
   conversion_audit_trail:
     name: Conversion audit trail
-    description: Every transaction posted for one conversion pivot, by conversion identifier.
+    description: Every transaction posted for one conversion, matched on the exact per-conversion pivot
+      account (on-ramp or off-ramp side), so the result is scoped by the account hierarchy rather than
+      metadata alone.
     resource: transactions
     vars:
       conversion_id:
         type: string
     body:
-      $match:
-        metadata[conversion_id]: ${conversion_id}
+      $or:
+      - $match:
+          account: exchanges:conv:onRamp:${conversion_id}
+      - $match:
+          account: exchanges:conv:offRamp:${conversion_id}
