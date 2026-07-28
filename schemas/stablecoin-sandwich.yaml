@@ -1,0 +1,554 @@
+# yaml-language-server: $schema=https://ds.formance.com/schemas/ledger-schema/extended
+meta:
+  slug: stablecoin-sandwich
+  order: 10
+  name: Cross-Border Payouts via Stablecoin
+  description: 'Fiat in, stablecoin across, fiat out: one transfer tracked through both conversions, every
+    in-flight leg, and each failure path.'
+  tags:
+  - cross-border
+  - stablecoin
+  - payouts
+  - fx
+chart:
+  external:
+    rails:
+      $rail_id:
+        collections: {}
+        payouts: {}
+  platform:
+    rails:
+      $rail_id:
+        collections: {}
+        payouts:
+          $payout_ref:
+            pending: {}
+        .self: {}
+      .self: {}
+    treasury:
+      chains:
+        $chain_id:
+          origin: {}
+          destination: {}
+          transfers:
+            $transfer_id:
+              pending: {}
+            .self: {}
+          .self: {}
+    revenue:
+      fees:
+        transfer: {}
+      fx:
+        spread: {}
+      .self: {}
+    expense:
+      networks:
+        $chain_id:
+          fees: {}
+      partners:
+        $partner_id:
+          fees: {}
+      .self: {}
+  counterparties:
+    onRampProviders:
+      $provider_id: {}
+    offRampPartners:
+      $partner_id: {}
+    .self: {}
+  exchanges:
+    conv:
+      onRamp:
+        $conversion_id: {}
+        .self: {}
+      offRamp:
+        $conversion_id: {}
+        .self: {}
+      .self: {}
+  beneficiaries:
+    $beneficiary_id:
+      payouts:
+        $payout_ref:
+          payable: {}
+      .self: {}
+transactions:
+  COLLECTION_RECEIVED:
+    description: >-
+      Origin fiat collected for one payout on a local inbound rail
+    script: |
+      vars {
+        string $rail_id
+        string $payout_ref
+        monetary $amount
+      }
+
+      send $amount (
+        source = @external:rails:$rail_id:collections allowing unbounded overdraft
+        destination = @platform:rails:$rail_id:collections
+      )
+
+      set_tx_meta("event_type", "collection_received")
+      set_tx_meta("payout_ref", $payout_ref)
+    interpreter: experimental
+  COLLECTION_RETURNED:
+    description: >-
+      Origin rail reverses a collection before conversion
+    script: |
+      vars {
+        string $rail_id
+        string $payout_ref
+        monetary $amount
+        string $original_tx_id
+      }
+
+      send $amount (
+        source = @platform:rails:$rail_id:collections
+        destination = @external:rails:$rail_id:collections
+      )
+
+      set_tx_meta("event_type", "collection_returned")
+      set_tx_meta("payout_ref", $payout_ref)
+      set_tx_meta("adjustment_flag", "true")
+      set_tx_meta("adjusted_posting_event_id", $original_tx_id)
+    interpreter: experimental
+  ON_RAMP_CONVERSION:
+    description: >-
+      Fees carved to revenue; remainder converts to stablecoin via a per-conversion pivot into on-chain
+      treasury
+    script: |
+      vars {
+        string $rail_id
+        string $provider_id
+        string $chain_id
+        string $conversion_id
+        string $payout_ref
+        monetary $collected
+        monetary $transfer_fee
+        monetary $fx_spread
+        monetary $net_fiat
+        monetary $stablecoin_out
+      }
+
+      send $collected (
+        source = @platform:rails:$rail_id:collections
+        destination = {
+          max $transfer_fee to @platform:revenue:fees:transfer
+          max $fx_spread to @platform:revenue:fx:spread
+          remaining to @exchanges:conv:onRamp:$conversion_id
+        }
+      )
+
+      send $net_fiat (
+        source = @exchanges:conv:onRamp:$conversion_id
+        destination = @counterparties:onRampProviders:$provider_id
+      )
+
+      send $stablecoin_out (
+        source = @counterparties:onRampProviders:$provider_id allowing unbounded overdraft
+        destination = @exchanges:conv:onRamp:$conversion_id
+      )
+
+      send $stablecoin_out (
+        source = @exchanges:conv:onRamp:$conversion_id
+        destination = @platform:treasury:chains:$chain_id:origin
+      )
+
+      set_tx_meta("event_type", "on_ramp_conversion")
+      set_tx_meta("conversion_id", $conversion_id)
+      set_tx_meta("payout_ref", $payout_ref)
+    interpreter: experimental
+  CHAIN_TRANSFER_INITIATED:
+    description: >-
+      Treasury moves to per-transfer in-transit; network fee expensed at submission
+    script: |
+      vars {
+        string $chain_id
+        string $transfer_id
+        monetary $transfer_amount
+        monetary $network_fee
+      }
+
+      send $network_fee (
+        source = @platform:treasury:chains:$chain_id:origin
+        destination = @platform:expense:networks:$chain_id:fees
+      )
+
+      send $transfer_amount (
+        source = @platform:treasury:chains:$chain_id:origin
+        destination = @platform:treasury:chains:$chain_id:transfers:$transfer_id:pending
+      )
+
+      set_tx_meta("event_type", "chain_transfer_initiated")
+      set_tx_meta("transfer_id", $transfer_id)
+    interpreter: experimental
+  CHAIN_TRANSFER_CONFIRMED:
+    description: >-
+      In-transit transfer confirms into the destination-side on-chain treasury
+    script: |
+      vars {
+        string $chain_id
+        string $transfer_id
+        monetary $transfer_amount
+      }
+
+      send $transfer_amount (
+        source = @platform:treasury:chains:$chain_id:transfers:$transfer_id:pending
+        destination = @platform:treasury:chains:$chain_id:destination
+      )
+
+      set_tx_meta("event_type", "chain_transfer_confirmed")
+      set_tx_meta("transfer_id", $transfer_id)
+    interpreter: experimental
+  CHAIN_TRANSFER_FAILED:
+    description: >-
+      Failed on-chain transfer reverses from in-transit back to the origin-side wallet
+    script: |
+      vars {
+        string $chain_id
+        string $transfer_id
+        monetary $transfer_amount
+        string $original_tx_id
+      }
+
+      send $transfer_amount (
+        source = @platform:treasury:chains:$chain_id:transfers:$transfer_id:pending
+        destination = @platform:treasury:chains:$chain_id:origin
+      )
+
+      set_tx_meta("event_type", "chain_transfer_failed")
+      set_tx_meta("transfer_id", $transfer_id)
+      set_tx_meta("adjustment_flag", "true")
+      set_tx_meta("adjusted_posting_event_id", $original_tx_id)
+    interpreter: experimental
+  OFF_RAMP_CONVERSION:
+    description: >-
+      Stablecoin sold to a local partner; partner fee expensed; beneficiary payable recorded
+    script: |
+      vars {
+        string $chain_id
+        string $partner_id
+        string $conversion_id
+        string $beneficiary_id
+        string $payout_ref
+        monetary $stablecoin_in
+        monetary $fiat_gross
+        monetary $partner_fee
+      }
+
+      send $stablecoin_in (
+        source = @platform:treasury:chains:$chain_id:destination
+        destination = @exchanges:conv:offRamp:$conversion_id
+      )
+
+      send $stablecoin_in (
+        source = @exchanges:conv:offRamp:$conversion_id
+        destination = @counterparties:offRampPartners:$partner_id
+      )
+
+      send $fiat_gross (
+        source = @counterparties:offRampPartners:$partner_id allowing unbounded overdraft
+        destination = @exchanges:conv:offRamp:$conversion_id
+      )
+
+      send $fiat_gross (
+        source = @exchanges:conv:offRamp:$conversion_id
+        destination = {
+          max $partner_fee to @platform:expense:partners:$partner_id:fees
+          remaining to @beneficiaries:$beneficiary_id:payouts:$payout_ref:payable
+        }
+      )
+
+      set_tx_meta("event_type", "off_ramp_conversion")
+      set_tx_meta("conversion_id", $conversion_id)
+      set_tx_meta("payout_ref", $payout_ref)
+    interpreter: experimental
+  PAYOUT_INITIATED:
+    description: >-
+      Beneficiary payable moves to a per-payout in-flight account on the destination rail
+    script: |
+      vars {
+        string $beneficiary_id
+        string $payout_ref
+        string $rail_id
+        monetary $payout_amount
+      }
+
+      send $payout_amount (
+        source = @beneficiaries:$beneficiary_id:payouts:$payout_ref:payable
+        destination = @platform:rails:$rail_id:payouts:$payout_ref:pending
+      )
+
+      set_tx_meta("event_type", "payout_initiated")
+      set_tx_meta("payout_ref", $payout_ref)
+    interpreter: experimental
+  PAYOUT_SETTLED:
+    description: >-
+      In-flight payout settles to the beneficiary on the destination rail
+    script: |
+      vars {
+        string $rail_id
+        string $payout_ref
+        monetary $payout_amount
+      }
+
+      send $payout_amount (
+        source = @platform:rails:$rail_id:payouts:$payout_ref:pending
+        destination = @external:rails:$rail_id:payouts
+      )
+
+      set_tx_meta("event_type", "payout_settled")
+      set_tx_meta("payout_ref", $payout_ref)
+    interpreter: experimental
+  PAYOUT_RETURNED:
+    description: >-
+      Rejected payout reverses from in-flight back to the beneficiary payable
+    script: |
+      vars {
+        string $rail_id
+        string $beneficiary_id
+        string $payout_ref
+        monetary $payout_amount
+        string $original_tx_id
+      }
+
+      send $payout_amount (
+        source = @platform:rails:$rail_id:payouts:$payout_ref:pending
+        destination = @beneficiaries:$beneficiary_id:payouts:$payout_ref:payable
+      )
+
+      set_tx_meta("event_type", "payout_returned")
+      set_tx_meta("payout_ref", $payout_ref)
+      set_tx_meta("adjustment_flag", "true")
+      set_tx_meta("adjusted_posting_event_id", $original_tx_id)
+    interpreter: experimental
+queries:
+  open_conversion_pivots:
+    name: Open conversion pivots
+    description: Lists any conversion pivot, on-ramp or off-ramp, holding a non-zero balance in either
+      asset that pivot touches (balance predicates are asset-keyed; extend the $or arms when new corridor
+      assets are added). Returns no rows in a healthy ledger; any row is a broken or partially posted
+      conversion and the row's address names the conversion to investigate. Run continuously as an exception
+      monitor.
+    resource: accounts
+    body:
+      $or:
+      - $and:
+        - $match:
+            address: 'exchanges:conv:onRamp:'
+        - $or:
+          - $not:
+              $match:
+                balance[USD/2]: 0
+          - $not:
+              $match:
+                balance[USDC/6]: 0
+      - $and:
+        - $match:
+            address: 'exchanges:conv:offRamp:'
+        - $or:
+          - $not:
+              $match:
+                balance[USDC/6]: 0
+          - $not:
+              $match:
+                balance[MXN/2]: 0
+  per_chain_treasury_position:
+    name: Per-chain treasury position
+    description: 'Returns every treasury account on one chain: the origin-side wallet, the destination-side
+      wallet, and each in-transit transfer. The per-asset sum is the total stablecoin the ledger claims
+      on that chain; reconciliation compares it against the actual on-chain wallet balances plus pending
+      transactions.'
+    resource: accounts
+    vars:
+      chain_id:
+        type: string
+    body:
+      $match:
+        address: 'platform:treasury:chains:${chain_id}:'
+  per_chain_in_transit_transfers:
+    name: Per-chain in-transit transfers
+    description: Returns each in-transit transfer account on one chain with its current balance. Non-zero
+      balances are transfers submitted but not yet confirmed; the total reconciles against pending transactions
+      visible on the chain.
+    resource: accounts
+    vars:
+      chain_id:
+        type: string
+    body:
+      $match:
+        address: 'platform:treasury:chains:${chain_id}:transfers:'
+  per_rail_platform_position:
+    name: Per-rail platform position
+    description: 'Returns the platform''s full position at one rail: the collected origin fiat not yet
+      converted plus every in-flight payout pending on that rail. The per-asset sum reconciles against
+      the rail''s settlement account statement plus its pending-settlement report.'
+    resource: accounts
+    vars:
+      rail_id:
+        type: string
+    body:
+      $match:
+        address: 'platform:rails:${rail_id}:'
+  all_rail_positions:
+    name: All rail positions
+    description: Sums the platform's positions across every rail per asset (aggregate balances over the
+      matching accounts). Use the accounts listing with the same filter for the per-rail breakdown.
+    resource: accounts
+    body:
+      $match:
+        address: 'platform:rails:'
+  total_origin_fiat_awaiting_conversion:
+    name: Total origin fiat awaiting conversion
+    description: Sums the collected-but-unconverted origin fiat across every rail (aggregate balances
+      over the matching accounts). This is the on-ramp conversion backlog.
+    resource: accounts
+    body:
+      $match:
+        address: platform:rails::collections
+  total_beneficiary_payables:
+    name: Total beneficiary payables
+    description: 'Sums every beneficiary payable across all beneficiaries and payouts (aggregate balances
+      over the matching accounts): the platform''s total destination-fiat liability not yet initiated
+      on a rail.'
+    resource: accounts
+    body:
+      $match:
+        address: beneficiaries::payouts::payable
+  one_beneficiary_position:
+    name: One beneficiary position
+    description: Returns everything currently owed to one beneficiary across all of their payouts. Aggregate
+      over the matching accounts for the total; the accounts listing gives the per-payout breakdown.
+    resource: accounts
+    vars:
+      beneficiary_id:
+        type: string
+    body:
+      $match:
+        address: 'beneficiaries:${beneficiary_id}:'
+  counterparty_net_positions:
+    name: Counterparty net positions
+    description: Returns the running per-asset positions against every on-ramp provider and off-ramp partner.
+      Each counterparty runs positive in the asset it received and negative in the asset it delivered;
+      the negative destination-fiat magnitude of an off-ramp partner equals its delivered gross, and that
+      magnitude minus the partner-fee expense equals net fiat physically received from the partner.
+    resource: accounts
+    body:
+      $match:
+        address: 'counterparties:'
+  in_flight_payouts:
+    name: In-flight payouts
+    description: Lists every per-payout in-flight account across all rails and payout references. Each
+      row is one individually trackable payout keyed by its payout reference; rows with non-zero balance
+      are currently on a rail awaiting settlement.
+    resource: accounts
+    body:
+      $match:
+        address: platform:rails::payouts::pending
+  one_payout_in_flight:
+    name: One payout in flight
+    description: Returns the in-flight account for one payout reference regardless of rail. A non-zero
+      balance means the payout is on the rail; zero means it settled or returned.
+    resource: accounts
+    vars:
+      payout_ref:
+        type: string
+    body:
+      $match:
+        address: platform:rails::payouts:${payout_ref}:pending
+  stuck_chain_transfers:
+    name: Stuck chain transfers
+    description: Lists in-transit chain transfers with non-zero stablecoin balances across all chains.
+      Any row older than the chain's expected confirmation window is an unconfirmed transfer requiring
+      investigation or a CHAIN_TRANSFER_FAILED reversal.
+    resource: accounts
+    body:
+      $and:
+      - $match:
+          address: platform:treasury:chains::transfers::pending
+      - $not:
+          $match:
+            balance[USDC/6]: 0
+  stuck_payouts:
+    name: Stuck payouts
+    description: Lists in-flight payouts with non-zero destination-fiat balances across all rails (the
+      balance predicate is asset-keyed; add one $not arm per destination fiat when new corridors are added).
+      Any row older than the rail's settlement window has neither settled nor returned and needs an operational
+      chase.
+    resource: accounts
+    body:
+      $and:
+      - $match:
+          address: platform:rails::payouts::pending
+      - $not:
+          $match:
+            balance[MXN/2]: 0
+  revenue_by_stream:
+    name: Revenue by stream
+    description: 'Returns each platform revenue account: transfer fees and FX spread. Balances are lifetime
+      totals; for period revenue, run the same filter on the volumes endpoint with startTime and endTime.'
+    resource: accounts
+    body:
+      $match:
+        address: 'platform:revenue:'
+  cost_by_category:
+    name: Cost by category
+    description: 'Returns each platform expense account: network fees per chain and partner fees per partner.
+      Balances are lifetime totals; use the volumes endpoint with a time window for period costs.'
+    resource: accounts
+    body:
+      $match:
+        address: 'platform:expense:'
+  per_chain_network_fee_spend:
+    name: Per-chain network fee spend
+    description: Returns the cumulative network fees expensed on one chain.
+    resource: accounts
+    vars:
+      chain_id:
+        type: string
+    body:
+      $match:
+        address: platform:expense:networks:${chain_id}:fees
+  collections_volume_per_rail:
+    name: Collections volume per rail
+    description: 'Flow through one rail''s collection boundary over a reporting window: volume_out of
+      the boundary is gross collected, and volume_in is amounts returned to senders. Time bounds (startTime,
+      endTime) are URL parameters on the volumes endpoint.'
+    resource: volumes
+    vars:
+      rail_id:
+        type: string
+    body:
+      $match:
+        address: external:rails:${rail_id}:collections
+  delivered_per_rail:
+    name: Delivered per rail
+    description: Returns the cumulative destination fiat delivered to beneficiaries through one rail (lifetime
+      balance of the rail's payout boundary). Use the volumes endpoint with a time window for period delivery.
+    resource: accounts
+    vars:
+      rail_id:
+        type: string
+    body:
+      $match:
+        address: external:rails:${rail_id}:payouts
+  payout_audit_trail:
+    name: Payout audit trail
+    description: 'Every transaction carrying one payout reference, end to end: collection, conversions,
+      initiation, settlement, and any return. Metadata-filtered, so this is the cold per-case audit path,
+      not a dashboard query.'
+    resource: transactions
+    vars:
+      payout_ref:
+        type: string
+    body:
+      $match:
+        metadata[payout_ref]: ${payout_ref}
+  conversion_audit_trail:
+    name: Conversion audit trail
+    description: Every transaction posted for one conversion pivot, by conversion identifier.
+    resource: transactions
+    vars:
+      conversion_id:
+        type: string
+    body:
+      $match:
+        metadata[conversion_id]: ${conversion_id}

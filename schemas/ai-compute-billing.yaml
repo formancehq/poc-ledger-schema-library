@@ -1,0 +1,652 @@
+# yaml-language-server: $schema=https://ds.formance.com/schemas/ledger-schema/extended
+meta:
+  slug: ai-compute-billing
+  order: 9
+  name: AI Compute Billing
+  description: Prepaid GPU credits drawn down by metered usage, with provider revenue share, capacity
+    reservations, and deferred revenue.
+  tags:
+  - ai
+  - usage-billing
+  - prepaid-credits
+  - marketplace
+chart:
+  customers:
+    $customerId:
+      .pattern: ^[a-z][a-z0-9]*$
+      credits:
+        available: {}
+      reservations:
+        $reservationId:
+          .pattern: ^[a-z][a-z0-9]*$
+          fee:
+            deferred: {}
+          capacity:
+            reserved: {}
+          .self: {}
+      refunds:
+        $refundId:
+          .pattern: ^[a-z][a-z0-9]*$
+          pending: {}
+      .self: {}
+    .self: {}
+  providers:
+    $providerId:
+      .pattern: ^[a-z][a-z0-9]*$
+      payable: {}
+      payouts:
+        $payoutId:
+          .pattern: ^[a-z][a-z0-9]*$
+          pending: {}
+    .self: {}
+  platform:
+    banks:
+      $bankId:
+        .pattern: ^[a-z][a-z0-9]*$
+        main: {}
+    issuance:
+      capacity: {}
+    revenue:
+      usage: {}
+      reservation: {}
+      breakage:
+        credits: {}
+        reservations: {}
+      .self: {}
+transactions:
+  CUSTOMER_PREPAYMENT:
+    description: >-
+      Customer prepays fiat into their credit balance; posted when funds settle at the platform bank
+    script: |
+      vars {
+        string $customer_id
+        string $bank_id
+        monetary $amount
+        string $payment_ref
+      }
+
+      send $amount (
+        source = @platform:banks:$bank_id:main allowing unbounded overdraft
+        destination = @customers:$customer_id:credits:available
+      )
+
+      set_tx_meta("event_type", "customer_prepayment")
+      set_tx_meta("payment_ref", $payment_ref)
+    interpreter: experimental
+  USAGE_CONSUMPTION:
+    description: >-
+      Metered workload draws down prepaid credits; revenue recognized and split with the capacity provider
+    script: |
+      vars {
+        string $customer_id
+        string $provider_id
+        string $usage_id
+        monetary $amount
+        monetary $provider_share
+      }
+
+      send $amount (
+        source = @customers:$customer_id:credits:available
+        destination = {
+          max $provider_share to @providers:$provider_id:payable
+          remaining to @platform:revenue:usage
+        }
+      )
+
+      set_tx_meta("event_type", "usage_consumption")
+      set_tx_meta("usage_id", $usage_id)
+    interpreter: experimental
+  USAGE_REVERSAL:
+    description: >-
+      Reverses a prior consumption event (metering error or billing dispute); re-credits the customer
+    script: |
+      vars {
+        string $customer_id
+        string $provider_id
+        string $reversal_id
+        string $original_event_id
+        monetary $provider_share
+        monetary $platform_share
+      }
+
+      send $provider_share (
+        source = @providers:$provider_id:payable
+        destination = @customers:$customer_id:credits:available
+      )
+
+      send $platform_share (
+        source = @platform:revenue:usage
+        destination = @customers:$customer_id:credits:available
+      )
+
+      set_tx_meta("event_type", "usage_reversal")
+      set_tx_meta("reversal_id", $reversal_id)
+      set_tx_meta("adjustment_flag", "true")
+      set_tx_meta("adjusted_posting_event_id", $original_event_id)
+    interpreter: experimental
+  RESERVATION_PURCHASE:
+    description: >-
+      Customer reserves dedicated capacity for a period; fee moves to deferred, entitlement hours are
+      issued
+    script: |
+      vars {
+        string $customer_id
+        string $reservation_id
+        monetary $fee
+        monetary $hours
+      }
+
+      send $fee (
+        source = @customers:$customer_id:credits:available
+        destination = @customers:$customer_id:reservations:$reservation_id:fee:deferred
+      )
+
+      send $hours (
+        source = @platform:issuance:capacity allowing unbounded overdraft
+        destination = @customers:$customer_id:reservations:$reservation_id:capacity:reserved
+      )
+
+      set_tx_meta("event_type", "reservation_purchase")
+      set_tx_meta("reservation_id", $reservation_id)
+    interpreter: experimental
+  RESERVED_DRAWDOWN:
+    description: >-
+      Dedicated capacity used; reserved hours burn and a pro-rata share of the fee is recognized and split
+    script: |
+      vars {
+        string $customer_id
+        string $reservation_id
+        string $provider_id
+        string $drawdown_id
+        monetary $hours
+        monetary $recognized
+        monetary $provider_share
+      }
+
+      send $hours (
+        source = @customers:$customer_id:reservations:$reservation_id:capacity:reserved
+        destination = @platform:issuance:capacity
+      )
+
+      send $recognized (
+        source = @customers:$customer_id:reservations:$reservation_id:fee:deferred
+        destination = {
+          max $provider_share to @providers:$provider_id:payable
+          remaining to @platform:revenue:reservation
+        }
+      )
+
+      set_tx_meta("event_type", "reserved_drawdown")
+      set_tx_meta("reservation_id", $reservation_id)
+      set_tx_meta("drawdown_id", $drawdown_id)
+    interpreter: experimental
+  RESERVED_DRAWDOWN_REVERSAL:
+    description: >-
+      Reverses part of a reserved-capacity drawdown; hours re-granted, recognized fee returned to deferred
+    script: |
+      vars {
+        string $customer_id
+        string $reservation_id
+        string $provider_id
+        string $reversal_id
+        string $original_event_id
+        monetary $hours
+        monetary $provider_share
+        monetary $platform_share
+      }
+
+      send $hours (
+        source = @platform:issuance:capacity allowing unbounded overdraft
+        destination = @customers:$customer_id:reservations:$reservation_id:capacity:reserved
+      )
+
+      send $provider_share (
+        source = @providers:$provider_id:payable
+        destination = @customers:$customer_id:reservations:$reservation_id:fee:deferred
+      )
+
+      send $platform_share (
+        source = @platform:revenue:reservation
+        destination = @customers:$customer_id:reservations:$reservation_id:fee:deferred
+      )
+
+      set_tx_meta("event_type", "reserved_drawdown_reversal")
+      set_tx_meta("reservation_id", $reservation_id)
+      set_tx_meta("reversal_id", $reversal_id)
+      set_tx_meta("adjustment_flag", "true")
+      set_tx_meta("adjusted_posting_event_id", $original_event_id)
+    interpreter: experimental
+  RESERVATION_EXPIRY:
+    description: >-
+      Reservation period ends; unused hours are retired and any unrecognized fee moves to breakage
+    script: |
+      vars {
+        string $customer_id
+        string $reservation_id
+      }
+
+      send [GPUH/2 *] (
+        source = @customers:$customer_id:reservations:$reservation_id:capacity:reserved
+        destination = @platform:issuance:capacity
+      )
+
+      send [USD/2 *] (
+        source = @customers:$customer_id:reservations:$reservation_id:fee:deferred
+        destination = @platform:revenue:breakage:reservations
+      )
+
+      set_tx_meta("event_type", "reservation_expiry")
+      set_tx_meta("reservation_id", $reservation_id)
+    interpreter: experimental
+  CREDIT_EXPIRY:
+    description: >-
+      Prepaid credits expire per terms; expired amount moves to breakage revenue
+    script: |
+      vars {
+        string $customer_id
+        string $expiry_id
+        monetary $amount
+      }
+
+      send $amount (
+        source = @customers:$customer_id:credits:available
+        destination = @platform:revenue:breakage:credits
+      )
+
+      set_tx_meta("event_type", "credit_expiry")
+      set_tx_meta("expiry_id", $expiry_id)
+    interpreter: experimental
+  PROVIDER_PAYOUT_INITIATE:
+    description: >-
+      Bank transfer initiated against the provider's accumulated payable; funds move to the in-transit
+      rail
+    script: |
+      vars {
+        string $provider_id
+        string $payout_id
+        monetary $amount
+      }
+
+      send $amount (
+        source = @providers:$provider_id:payable
+        destination = @providers:$provider_id:payouts:$payout_id:pending
+      )
+
+      set_tx_meta("event_type", "provider_payout_initiate")
+      set_tx_meta("payout_id", $payout_id)
+    interpreter: experimental
+  PROVIDER_PAYOUT_SETTLE:
+    description: >-
+      The initiated payout settles at the bank; the bank position moves only now
+    script: |
+      vars {
+        string $provider_id
+        string $payout_id
+        string $bank_id
+        monetary $amount
+      }
+
+      send $amount (
+        source = @providers:$provider_id:payouts:$payout_id:pending
+        destination = @platform:banks:$bank_id:main
+      )
+
+      set_tx_meta("event_type", "provider_payout_settle")
+      set_tx_meta("payout_id", $payout_id)
+    interpreter: experimental
+  PROVIDER_PAYOUT_RETURN:
+    description: >-
+      The bank returns or fails the initiated payout before settlement; funds return to the payable
+    script: |
+      vars {
+        string $provider_id
+        string $payout_id
+        string $original_event_id
+      }
+
+      send [USD/2 *] (
+        source = @providers:$provider_id:payouts:$payout_id:pending
+        destination = @providers:$provider_id:payable
+      )
+
+      set_tx_meta("event_type", "provider_payout_return")
+      set_tx_meta("payout_id", $payout_id)
+      set_tx_meta("adjustment_flag", "true")
+      set_tx_meta("adjusted_posting_event_id", $original_event_id)
+    interpreter: experimental
+  CUSTOMER_REFUND_INITIATE:
+    description: >-
+      Refund of unspent credits initiated; funds leave the credit balance into the in-transit rail
+    script: |
+      vars {
+        string $customer_id
+        string $refund_id
+        monetary $amount
+      }
+
+      send $amount (
+        source = @customers:$customer_id:credits:available
+        destination = @customers:$customer_id:refunds:$refund_id:pending
+      )
+
+      set_tx_meta("event_type", "customer_refund_initiate")
+      set_tx_meta("refund_id", $refund_id)
+    interpreter: experimental
+  CUSTOMER_REFUND_SETTLE:
+    description: >-
+      The initiated refund settles at the bank; the bank position moves only now
+    script: |
+      vars {
+        string $customer_id
+        string $refund_id
+        string $bank_id
+        monetary $amount
+      }
+
+      send $amount (
+        source = @customers:$customer_id:refunds:$refund_id:pending
+        destination = @platform:banks:$bank_id:main
+      )
+
+      set_tx_meta("event_type", "customer_refund_settle")
+      set_tx_meta("refund_id", $refund_id)
+    interpreter: experimental
+  CUSTOMER_REFUND_RETURN:
+    description: >-
+      The bank returns or fails the initiated refund before settlement; funds return to the credit balance
+    script: |
+      vars {
+        string $customer_id
+        string $refund_id
+        string $original_event_id
+      }
+
+      send [USD/2 *] (
+        source = @customers:$customer_id:refunds:$refund_id:pending
+        destination = @customers:$customer_id:credits:available
+      )
+
+      set_tx_meta("event_type", "customer_refund_return")
+      set_tx_meta("refund_id", $refund_id)
+      set_tx_meta("adjustment_flag", "true")
+      set_tx_meta("adjusted_posting_event_id", $original_event_id)
+    interpreter: experimental
+queries:
+  bank_position_across_banks:
+    name: Bank position across banks
+    description: One row per partner bank main account with its current balance. Each balance runs negative;
+      its absolute value is the settled cash that bank's statement should show. Treasury runs this against
+      the daily bank statements; this is the external reconciliation anchor.
+    resource: accounts
+    body:
+      $match:
+        address: platform:banks::main
+  total_on_ledger_usd_position_internal_bank_check:
+    name: Total on-ledger USD position (internal bank check)
+    description: 'Sums every positive USD holding on the ledger: the whole customer tree (credits, deferred
+      fees, refunds in transit), the whole provider tree (payables, payouts in transit), and recognized
+      revenue. Read the USD/2 line of the result; it equals the absolute value of the summed bank balances
+      when the ledger is internally consistent (invariant 1 in design.md). The GPUH/2 line the same query
+      returns is customer reserved hours and is checked separately by invariant 2. Aggregate balances
+      over the matching accounts.'
+    resource: accounts
+    body:
+      $or:
+      - $match:
+          address: 'customers:'
+      - $match:
+          address: 'providers:'
+      - $match:
+          address: 'platform:revenue:'
+  outstanding_issued_capacity_issuance_contra:
+    name: Outstanding issued capacity (issuance contra)
+    description: The GPUH issuance boundary account. It runs negative; its absolute GPUH balance is the
+      total capacity hours issued and not yet retired, which must equal the sum of reserved hours across
+      customers (invariant 2 in design.md).
+    resource: accounts
+    body:
+      $match:
+        address: platform:issuance:capacity
+  outstanding_reserved_capacity_all_customers:
+    name: Outstanding reserved capacity (all customers)
+    description: Total GPUH held in reservation entitlements across every customer and every reservation.
+      Pairs with the issuance contra for the capacity conservation check. Aggregate balances over the
+      matching accounts.
+    resource: accounts
+    body:
+      $match:
+        address: customers::reservations::capacity:reserved
+  deferred_revenue_total_unspent_customer_credits:
+    name: Deferred revenue (total unspent customer credits)
+    description: 'Finance''s key number: everything customers have paid that the platform has not yet
+      earned. It is the sum of spendable credit balances plus reservation fees still deferred. Run on
+      demand or nightly for the deferred revenue line. Aggregate balances over the matching accounts.'
+    resource: accounts
+    body:
+      $or:
+      - $match:
+          address: customers::credits:available
+      - $match:
+          address: customers::reservations::fee:deferred
+  total_customer_liability:
+    name: Total customer liability
+    description: 'Everything the platform owes customers: deferred revenue plus refunds initiated but
+      not yet settled. This is the number to compare against customer-facing balance displays and the
+      figure a regulator or auditor means by customer funds. Aggregate balances over the matching accounts.'
+    resource: accounts
+    body:
+      $or:
+      - $match:
+          address: customers::credits:available
+      - $match:
+          address: customers::reservations::fee:deferred
+      - $match:
+          address: customers::refunds::pending
+  total_customer_credit_balances:
+    name: Total customer credit balances
+    description: The spendable prepaid component alone, excluding deferred reservation fees. Useful for
+      product dashboards showing aggregate wallet float. Aggregate balances over the matching accounts.
+    resource: accounts
+    body:
+      $match:
+        address: customers::credits:available
+  one_customer_s_full_position:
+    name: One customer's full position
+    description: 'Every account and every asset balance under one customer: spendable credits, each reservation''s
+      deferred fee and remaining hours, and any refunds in transit. The support view of a customer.'
+    resource: accounts
+    vars:
+      customer_id:
+        type: string
+    body:
+      $match:
+        address: 'customers:${customer_id}:'
+  one_customer_s_available_credit_balance:
+    name: One customer's available credit balance
+    description: The single spendable balance the product shows the customer.
+    resource: accounts
+    vars:
+      customer_id:
+        type: string
+    body:
+      $match:
+        address: customers:${customer_id}:credits:available
+  one_provider_s_payable:
+    name: One provider's payable
+    description: What the platform currently owes one provider, before any in-flight payouts.
+    resource: accounts
+    vars:
+      provider_id:
+        type: string
+    body:
+      $match:
+        address: providers:${provider_id}:payable
+  one_reservation_s_remaining_balances:
+    name: One reservation's remaining balances
+    description: 'Both accounts of one reservation: remaining hours (GPUH) and unrecognized fee (USD).
+      Zero in both means the reservation has fully closed.'
+    resource: accounts
+    vars:
+      customer_id:
+        type: string
+      reservation_id:
+        type: string
+    body:
+      $match:
+        address: 'customers:${customer_id}:reservations:${reservation_id}:'
+  total_provider_payable:
+    name: Total provider payable
+    description: The platform's total accrued obligation to capacity providers. Treasury reads this before
+      each payout run. Aggregate balances over the matching accounts.
+    resource: accounts
+    body:
+      $match:
+        address: providers::payable
+  payouts_in_flight:
+    name: Payouts in flight
+    description: Total initiated-but-unsettled payout money across all providers. Ties to the payment
+      rail's pending-settlement report (invariant 3 in design.md); zero when nothing is clearing. Aggregate
+      balances over the matching accounts.
+    resource: accounts
+    body:
+      $match:
+        address: providers::payouts::pending
+  refunds_in_flight:
+    name: Refunds in flight
+    description: Total initiated-but-unsettled refund money across all customers. Ties to the refund rail's
+      pending report (invariant 4 in design.md). Aggregate balances over the matching accounts.
+    resource: accounts
+    body:
+      $match:
+        address: customers::refunds::pending
+  aged_payouts_still_in_flight:
+    name: Aged payouts still in flight
+    description: One row per payout still carrying a balance. Every row is a payout initiated but neither
+      settled nor returned; review rows whose last update predates the rail's settlement SLA and chase
+      them with the bank.
+    resource: accounts
+    body:
+      $and:
+      - $match:
+          address: providers::payouts::pending
+      - $gt:
+          balance[USD/2]: 0
+  aged_refunds_still_in_flight:
+    name: Aged refunds still in flight
+    description: One row per refund still carrying a balance, same reading as aged payouts.
+    resource: accounts
+    body:
+      $and:
+      - $match:
+          address: customers::refunds::pending
+      - $gt:
+          balance[USD/2]: 0
+  open_reservations_with_remaining_capacity:
+    name: Open reservations with remaining capacity
+    description: One row per reservation entitlement that still holds hours. During a period this is the
+      book of active reservations; any row belonging to an ended period is a missed RESERVATION_EXPIRY
+      run.
+    resource: accounts
+    body:
+      $and:
+      - $match:
+          address: customers::reservations::capacity:reserved
+      - $gt:
+          balance[GPUH/2]: 0
+  revenue_by_stream:
+    name: Revenue by stream
+    description: 'Every platform revenue account with its lifetime balance: usage, reservation, and the
+      two breakage streams broken out separately, satisfying the requirement that breakage never mixes
+      with usage revenue.'
+    resource: accounts
+    body:
+      $match:
+        address: 'platform:revenue:'
+  recognized_revenue_this_period_by_stream:
+    name: Recognized revenue this period by stream
+    description: Volume into each revenue account over a reporting window; the per-period counterpart
+      of the lifetime rollup. volume_in per account is the amount recognized in the window. Reporting
+      window set via startTime/endTime URL parameters (e.g. startTime=2026-07-01T00:00:00Z&endTime=2026-08-01T00:00:00Z).
+    resource: volumes
+    body:
+      $match:
+        address: 'platform:revenue:'
+  one_customer_s_gross_credit_draw_this_period:
+    name: One customer's gross credit draw this period
+    description: 'volume_out of one customer''s credit balance over the window: every draw against credits
+      (consumption charges, reservation fees, refund initiations, expiries) as one gross figure. For a
+      split by cause, drill down with the consumption-history audit query. Reporting window set via startTime/endTime
+      URL parameters.'
+    resource: volumes
+    vars:
+      customer_id:
+        type: string
+    body:
+      $match:
+        address: customers:${customer_id}:credits:available
+  audit_trail_for_one_payout:
+    name: Audit trail for one payout
+    description: 'Every transaction that touched one payout''s in-transit account, in either direction:
+      the initiation and then the settlement or return. Exact address, no wildcards.'
+    resource: transactions
+    vars:
+      provider_id:
+        type: string
+      payout_id:
+        type: string
+    body:
+      $match:
+        account: providers:${provider_id}:payouts:${payout_id}:pending
+  audit_trail_for_one_refund:
+    name: Audit trail for one refund
+    description: 'Every transaction that touched one refund''s in-transit account: initiation, then settlement
+      or return.'
+    resource: transactions
+    vars:
+      customer_id:
+        type: string
+      refund_id:
+        type: string
+    body:
+      $match:
+        account: customers:${customer_id}:refunds:${refund_id}:pending
+  consumption_history_for_one_customer:
+    name: Consumption history for one customer
+    description: Every metered consumption charge against one customer's credits, anchored on the exact
+      credit account address and filtered to the consumption event type.
+    resource: transactions
+    vars:
+      customer_id:
+        type: string
+    body:
+      $and:
+      - $match:
+          source: customers:${customer_id}:credits:available
+      - $match:
+          metadata[event_type]: usage_consumption
+  full_history_of_one_reservation:
+    name: Full history of one reservation
+    description: Every event in one reservation's lifecycle (purchase, drawdowns, drawdown reversals,
+      expiry) via the reservation id every such template stamps into transaction metadata. Cold-path per-case
+      audit.
+    resource: transactions
+    vars:
+      reservation_id:
+        type: string
+    body:
+      $match:
+        metadata[reservation_id]: ${reservation_id}
+  transactions_for_one_usage_event:
+    name: Transactions for one usage event
+    description: The posting behind one metered usage event, plus any reversal issued against it (reversals
+      stamp the original id as adjusted_posting_event_id). Cold-path per-case audit via promoted metadata.
+    resource: transactions
+    vars:
+      usage_id:
+        type: string
+    body:
+      $or:
+      - $match:
+          metadata[usage_id]: ${usage_id}
+      - $match:
+          metadata[adjusted_posting_event_id]: ${usage_id}
