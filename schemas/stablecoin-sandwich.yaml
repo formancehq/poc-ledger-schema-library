@@ -75,6 +75,7 @@ transactions:
     description: >-
       Origin fiat collected for one payout on a local inbound rail
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $rail_id
         string $payout_ref
@@ -88,11 +89,11 @@ transactions:
 
       set_tx_meta("event_type", "collection_received")
       set_tx_meta("payout_ref", $payout_ref)
-    interpreter: experimental
   COLLECTION_RETURNED:
     description: >-
       Origin rail reverses a collection before conversion
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $rail_id
         string $payout_ref
@@ -109,12 +110,12 @@ transactions:
       set_tx_meta("payout_ref", $payout_ref)
       set_tx_meta("adjustment_flag", "true")
       set_tx_meta("adjusted_posting_event_id", $original_tx_id)
-    interpreter: experimental
   ON_RAMP_CONVERSION:
     description: >-
       Fees carved to revenue; remainder converts to stablecoin via a per-conversion pivot into on-chain
       treasury
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $rail_id
         string $provider_id
@@ -155,11 +156,11 @@ transactions:
       set_tx_meta("event_type", "on_ramp_conversion")
       set_tx_meta("conversion_id", $conversion_id)
       set_tx_meta("payout_ref", $payout_ref)
-    interpreter: experimental
   CHAIN_TRANSFER_INITIATED:
     description: >-
       Treasury moves to per-transfer in-transit; network fee expensed at submission
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $chain_id
         string $transfer_id
@@ -179,11 +180,11 @@ transactions:
 
       set_tx_meta("event_type", "chain_transfer_initiated")
       set_tx_meta("transfer_id", $transfer_id)
-    interpreter: experimental
   CHAIN_TRANSFER_CONFIRMED:
     description: >-
       In-transit transfer confirms into the destination-side on-chain treasury
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $chain_id
         string $transfer_id
@@ -197,11 +198,11 @@ transactions:
 
       set_tx_meta("event_type", "chain_transfer_confirmed")
       set_tx_meta("transfer_id", $transfer_id)
-    interpreter: experimental
   CHAIN_TRANSFER_FAILED:
     description: >-
       Failed on-chain transfer reverses from in-transit back to the origin-side wallet
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $chain_id
         string $transfer_id
@@ -218,11 +219,11 @@ transactions:
       set_tx_meta("transfer_id", $transfer_id)
       set_tx_meta("adjustment_flag", "true")
       set_tx_meta("adjusted_posting_event_id", $original_tx_id)
-    interpreter: experimental
   OFF_RAMP_CONVERSION:
     description: >-
       Stablecoin sold to a local partner; partner fee expensed; beneficiary payable recorded
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $chain_id
         string $partner_id
@@ -260,11 +261,11 @@ transactions:
       set_tx_meta("event_type", "off_ramp_conversion")
       set_tx_meta("conversion_id", $conversion_id)
       set_tx_meta("payout_ref", $payout_ref)
-    interpreter: experimental
   PAYOUT_INITIATED:
     description: >-
       Beneficiary payable moves to a per-payout in-flight account on the destination rail
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $beneficiary_id
         string $payout_ref
@@ -279,11 +280,11 @@ transactions:
 
       set_tx_meta("event_type", "payout_initiated")
       set_tx_meta("payout_ref", $payout_ref)
-    interpreter: experimental
   PAYOUT_SETTLED:
     description: >-
       In-flight payout settles to the beneficiary on the destination rail
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $rail_id
         string $payout_ref
@@ -297,11 +298,11 @@ transactions:
 
       set_tx_meta("event_type", "payout_settled")
       set_tx_meta("payout_ref", $payout_ref)
-    interpreter: experimental
   PAYOUT_RETURNED:
     description: >-
       Rejected payout reverses from in-flight back to the beneficiary payable
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $rail_id
         string $beneficiary_id
@@ -319,7 +320,6 @@ transactions:
       set_tx_meta("payout_ref", $payout_ref)
       set_tx_meta("adjustment_flag", "true")
       set_tx_meta("adjusted_posting_event_id", $original_tx_id)
-    interpreter: experimental
 queries:
   open_conversion_pivots:
     name: Open conversion pivots

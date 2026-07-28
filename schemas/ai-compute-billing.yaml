@@ -58,6 +58,7 @@ transactions:
     description: >-
       Customer prepays fiat into their credit balance; posted when funds settle at the platform bank
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $customer_id
         string $bank_id
@@ -72,11 +73,11 @@ transactions:
 
       set_tx_meta("event_type", "customer_prepayment")
       set_tx_meta("payment_ref", $payment_ref)
-    interpreter: experimental
   USAGE_CONSUMPTION:
     description: >-
       Metered workload draws down prepaid credits; revenue recognized and split with the capacity provider
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $customer_id
         string $provider_id
@@ -95,11 +96,11 @@ transactions:
 
       set_tx_meta("event_type", "usage_consumption")
       set_tx_meta("usage_id", $usage_id)
-    interpreter: experimental
   USAGE_REVERSAL:
     description: >-
       Reverses a prior consumption event (metering error or billing dispute); re-credits the customer
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $customer_id
         string $provider_id
@@ -123,12 +124,12 @@ transactions:
       set_tx_meta("reversal_id", $reversal_id)
       set_tx_meta("adjustment_flag", "true")
       set_tx_meta("adjusted_posting_event_id", $original_event_id)
-    interpreter: experimental
   RESERVATION_PURCHASE:
     description: >-
       Customer reserves dedicated capacity for a period; fee moves to deferred, entitlement hours are
       issued
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $customer_id
         string $reservation_id
@@ -148,11 +149,11 @@ transactions:
 
       set_tx_meta("event_type", "reservation_purchase")
       set_tx_meta("reservation_id", $reservation_id)
-    interpreter: experimental
   RESERVED_DRAWDOWN:
     description: >-
       Dedicated capacity used; reserved hours burn and a pro-rata share of the fee is recognized and split
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $customer_id
         string $reservation_id
@@ -179,11 +180,11 @@ transactions:
       set_tx_meta("event_type", "reserved_drawdown")
       set_tx_meta("reservation_id", $reservation_id)
       set_tx_meta("drawdown_id", $drawdown_id)
-    interpreter: experimental
   RESERVED_DRAWDOWN_REVERSAL:
     description: >-
       Reverses part of a reserved-capacity drawdown; hours re-granted, recognized fee returned to deferred
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $customer_id
         string $reservation_id
@@ -215,11 +216,11 @@ transactions:
       set_tx_meta("reversal_id", $reversal_id)
       set_tx_meta("adjustment_flag", "true")
       set_tx_meta("adjusted_posting_event_id", $original_event_id)
-    interpreter: experimental
   RESERVATION_EXPIRY:
     description: >-
       Reservation period ends; unused hours are retired and any unrecognized fee moves to breakage
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $customer_id
         string $reservation_id
@@ -237,11 +238,11 @@ transactions:
 
       set_tx_meta("event_type", "reservation_expiry")
       set_tx_meta("reservation_id", $reservation_id)
-    interpreter: experimental
   CREDIT_EXPIRY:
     description: >-
       Prepaid credits expire per terms; expired amount moves to breakage revenue
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $customer_id
         string $expiry_id
@@ -255,12 +256,12 @@ transactions:
 
       set_tx_meta("event_type", "credit_expiry")
       set_tx_meta("expiry_id", $expiry_id)
-    interpreter: experimental
   PROVIDER_PAYOUT_INITIATE:
     description: >-
       Bank transfer initiated against the provider's accumulated payable; funds move to the in-transit
       rail
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $provider_id
         string $payout_id
@@ -274,11 +275,11 @@ transactions:
 
       set_tx_meta("event_type", "provider_payout_initiate")
       set_tx_meta("payout_id", $payout_id)
-    interpreter: experimental
   PROVIDER_PAYOUT_SETTLE:
     description: >-
       The initiated payout settles at the bank; the bank position moves only now
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $provider_id
         string $payout_id
@@ -293,11 +294,11 @@ transactions:
 
       set_tx_meta("event_type", "provider_payout_settle")
       set_tx_meta("payout_id", $payout_id)
-    interpreter: experimental
   PROVIDER_PAYOUT_RETURN:
     description: >-
       The bank returns or fails the initiated payout before settlement; funds return to the payable
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $provider_id
         string $payout_id
@@ -313,11 +314,11 @@ transactions:
       set_tx_meta("payout_id", $payout_id)
       set_tx_meta("adjustment_flag", "true")
       set_tx_meta("adjusted_posting_event_id", $original_event_id)
-    interpreter: experimental
   CUSTOMER_REFUND_INITIATE:
     description: >-
       Refund of unspent credits initiated; funds leave the credit balance into the in-transit rail
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $customer_id
         string $refund_id
@@ -331,11 +332,11 @@ transactions:
 
       set_tx_meta("event_type", "customer_refund_initiate")
       set_tx_meta("refund_id", $refund_id)
-    interpreter: experimental
   CUSTOMER_REFUND_SETTLE:
     description: >-
       The initiated refund settles at the bank; the bank position moves only now
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $customer_id
         string $refund_id
@@ -350,11 +351,11 @@ transactions:
 
       set_tx_meta("event_type", "customer_refund_settle")
       set_tx_meta("refund_id", $refund_id)
-    interpreter: experimental
   CUSTOMER_REFUND_RETURN:
     description: >-
       The bank returns or fails the initiated refund before settlement; funds return to the credit balance
     script: |
+      #![feature("experimental-account-interpolation")]
       vars {
         string $customer_id
         string $refund_id
@@ -370,7 +371,6 @@ transactions:
       set_tx_meta("refund_id", $refund_id)
       set_tx_meta("adjustment_flag", "true")
       set_tx_meta("adjusted_posting_event_id", $original_event_id)
-    interpreter: experimental
 queries:
   bank_position_across_banks:
     name: Bank position across banks
