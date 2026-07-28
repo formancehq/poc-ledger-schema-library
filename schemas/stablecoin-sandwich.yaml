@@ -532,9 +532,11 @@ queries:
         address: external:rails:${rail_id}:payouts
   payout_audit_trail:
     name: Payout audit trail
-    description: 'Every transaction carrying one payout reference, end to end: collection, conversions,
-      initiation, settlement, and any return. Metadata-filtered, so this is the cold per-case audit path,
-      not a dashboard query.'
+    description: 'Every transaction carrying one payout reference: collection, both conversions, payout
+      initiation, settlement, and any return. The on-chain hop is NOT included, by design: chain transfers
+      batch many payouts and carry their own transfer_id, so audit that leg with transfer_audit_trail
+      using the transfer the payout system assigned. Metadata-filtered, so this is the cold per-case audit
+      path, not a dashboard query.'
     resource: transactions
     vars:
       payout_ref:
@@ -542,6 +544,18 @@ queries:
     body:
       $match:
         metadata[payout_ref]: ${payout_ref}
+  transfer_audit_trail:
+    name: Transfer audit trail
+    description: Every transaction posted for one on-chain transfer (initiation, confirmation, or failure),
+      by transfer identifier. A chain transfer batches many payouts, so this is the audit path for the
+      middle leg that payout_audit_trail deliberately excludes.
+    resource: transactions
+    vars:
+      transfer_id:
+        type: string
+    body:
+      $match:
+        metadata[transfer_id]: ${transfer_id}
   conversion_audit_trail:
     name: Conversion audit trail
     description: Every transaction posted for one conversion pivot, by conversion identifier.
