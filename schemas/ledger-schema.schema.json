@@ -60,6 +60,10 @@
           "format": "uri",
           "pattern": "^https?://",
           "description": "Absolute URL to the template's documentation page. Optional — only some templates have a dedicated docs page. Surfaced as a 'Documentation' link in the studio gallery when present."
+        },
+        "hiddenInStudio": {
+          "type": "boolean",
+          "description": "When true, the studio gallery omits this template entirely (platform-ui's codegen filters it out of the generated TEMPLATES registry, so its YAML never reaches the client bundle). The docs site still consumes it — see `docsUrl`. Use this for a recipe worth documenting that doesn't read as a business shape a prospect would pick off the gallery, which is a marketing surface. Defaults to false."
         }
       }
     },
