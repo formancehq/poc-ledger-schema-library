@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://ds.formance.com/schemas/ledger-schema/extended
 meta:
   slug: marketplace-split-payments
-  order: 11
+  order: 12
   name: Marketplace Split Payments
   description: 'Buyer funds held in per-order escrow, split on acceptance into seller payable,
     rolling reserve, and platform commission — with refunds, chargebacks, and seller payouts.'

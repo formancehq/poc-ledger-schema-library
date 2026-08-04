@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://ds.formance.com/schemas/ledger-schema/extended
 meta:
   slug: remittance-fx
-  order: 15
+  order: 16
   name: Cross-Border Remittance with FX
   description: 'Classic corridor remittance: collect in one currency, convert through an FX desk
     with fee and spread carved out, pay out on the destination rail — every leg auditable.'

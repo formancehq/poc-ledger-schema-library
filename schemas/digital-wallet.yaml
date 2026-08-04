@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://ds.formance.com/schemas/ledger-schema/extended
 meta:
   slug: digital-wallet
-  order: 12
+  order: 13
   name: Digital Wallet
   description: 'Closed-loop stored value: top-ups, P2P transfers, merchant payments with a platform
     take rate, holds with partial capture, and withdrawals back to the bank.'

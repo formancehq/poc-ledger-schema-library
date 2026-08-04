@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://ds.formance.com/schemas/ledger-schema/extended
 meta:
   slug: earned-wage-access
-  order: 13
+  order: 14
   name: Earned Wage Access
   description: 'Wages accrue daily against employer funding; employees draw advances (fee taken
     up front) and payroll pays out whatever is left at the end of the period.'

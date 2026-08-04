@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://ds.formance.com/schemas/ledger-schema/extended
 meta:
   slug: loan-servicing
-  order: 14
+  order: 15
   name: Loan Servicing
   description: 'Amortizing loans end to end: disbursement, interest accrual, payments applied
     interest-first through a suspense account, escrow, charge-off, and recovery.'
