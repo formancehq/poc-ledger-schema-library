@@ -9,6 +9,7 @@ meta:
     - "lending"
     - "collections"
   docsUrl: "https://docs.formance.com/examples/advanced/bnpl-lending"
+  demoUrl: "https://formance-demo-portal.vercel.app/d/studio-bnpl-lending"
 chart:
   borrowers:
     $borrowerId:

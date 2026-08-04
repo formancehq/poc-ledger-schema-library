@@ -1,0 +1,270 @@
+# yaml-language-server: $schema=https://ds.formance.com/schemas/ledger-schema/extended
+meta:
+  slug: loan-servicing
+  order: 15
+  name: Loan Servicing
+  description: 'Amortizing loans end to end: disbursement, interest accrual, payments applied
+    interest-first through a suspense account, escrow, charge-off, and recovery.'
+  tags:
+  - lending
+  - loans
+  - interest
+  - collections
+  demoUrl: "https://formance-demo-portal.vercel.app/d/studio-loan-servicing"
+chart:
+  external:
+    banks:
+      $bank_id:
+        .pattern: ^[a-z][a-zA-Z0-9_]*$
+        operating: {}
+  borrowers:
+    $borrower_id:
+      .pattern: ^[a-z][a-zA-Z0-9_]*$
+      loans:
+        $loan_id:
+          .pattern: ^[a-z][a-zA-Z0-9_]*$
+          principal:
+            outstanding: {}
+            chargedOff: {}
+          interest:
+            receivable: {}
+          fees:
+            receivable: {}
+          escrow: {}
+          suspense: {}
+          .self: {}
+  platform:
+    revenue:
+      interest: {}
+      lateFees: {}
+transactions:
+  LOAN_DISBURSED:
+    description: >-
+      Loan funded to the borrower's bank; the principal receivable is recorded
+      as a negative balance on the outstanding account until it is repaid
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $bank_id
+        string $borrower_id
+        string $loan_id
+        monetary $amount
+      }
+
+      send $amount (
+        source = @borrowers:$borrower_id:loans:$loan_id:principal:outstanding allowing unbounded overdraft
+        destination = @external:banks:$bank_id:operating
+      )
+
+      set_tx_meta("event_type", "loan_disbursed")
+      set_tx_meta("loan_id", $loan_id)
+  INTEREST_ACCRUED:
+    description: Periodic interest accrual recognized as revenue and owed by the borrower
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $borrower_id
+        string $loan_id
+        monetary $amount
+        string $period_id
+      }
+
+      send $amount (
+        source = @borrowers:$borrower_id:loans:$loan_id:interest:receivable allowing unbounded overdraft
+        destination = @platform:revenue:interest
+      )
+
+      set_tx_meta("event_type", "interest_accrued")
+      set_tx_meta("loan_id", $loan_id)
+      set_tx_meta("period_id", $period_id)
+  LATE_FEE_ASSESSED:
+    description: >-
+      Late fee assessed on a missed installment: owed on the loan's own fee
+      receivable, recognized as fee revenue
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $borrower_id
+        string $loan_id
+        monetary $amount
+        string $period_id
+      }
+
+      send $amount (
+        source = @borrowers:$borrower_id:loans:$loan_id:fees:receivable allowing unbounded overdraft
+        destination = @platform:revenue:lateFees
+      )
+
+      set_tx_meta("event_type", "late_fee_assessed")
+      set_tx_meta("loan_id", $loan_id)
+      set_tx_meta("period_id", $period_id)
+  PAYMENT_RECEIVED:
+    description: Borrower payment lands in suspense until it is allocated
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $bank_id
+        string $borrower_id
+        string $loan_id
+        monetary $amount
+        string $payment_id
+      }
+
+      send $amount (
+        source = @external:banks:$bank_id:operating allowing unbounded overdraft
+        destination = @borrowers:$borrower_id:loans:$loan_id:suspense
+      )
+
+      set_tx_meta("event_type", "payment_received")
+      set_tx_meta("loan_id", $loan_id)
+      set_tx_meta("payment_id", $payment_id)
+  PAYMENT_APPLIED:
+    description: >-
+      Suspense allocated waterfall-style: fees owed first, then interest, then
+      escrow, and whatever remains reduces principal
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $borrower_id
+        string $loan_id
+        monetary $amount
+        monetary $fees_due
+        monetary $interest_due
+        monetary $escrow_due
+        string $payment_id
+      }
+
+      send $amount (
+        source = @borrowers:$borrower_id:loans:$loan_id:suspense
+        destination = {
+          max $fees_due to @borrowers:$borrower_id:loans:$loan_id:fees:receivable
+          max $interest_due to @borrowers:$borrower_id:loans:$loan_id:interest:receivable
+          max $escrow_due to @borrowers:$borrower_id:loans:$loan_id:escrow
+          remaining to @borrowers:$borrower_id:loans:$loan_id:principal:outstanding
+        }
+      )
+
+      set_tx_meta("event_type", "payment_applied")
+      set_tx_meta("loan_id", $loan_id)
+      set_tx_meta("payment_id", $payment_id)
+  ESCROW_DISBURSED:
+    description: Escrow paid out for taxes or insurance on the borrower's behalf
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $bank_id
+        string $borrower_id
+        string $loan_id
+        monetary $amount
+        string $disbursement_id
+      }
+
+      send $amount (
+        source = @borrowers:$borrower_id:loans:$loan_id:escrow
+        destination = @external:banks:$bank_id:operating
+      )
+
+      set_tx_meta("event_type", "escrow_disbursed")
+      set_tx_meta("loan_id", $loan_id)
+      set_tx_meta("disbursement_id", $disbursement_id)
+  LOAN_CHARGED_OFF:
+    description: >-
+      Charge-off: the principal receivable moves to the charged-off account
+      (recoveries still track against it) and uncollected accrued interest and
+      late fees are reversed out of their own revenue lines
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $borrower_id
+        string $loan_id
+        monetary $principal_remaining
+        monetary $interest_remaining
+        monetary $fees_remaining
+      }
+
+      send $principal_remaining (
+        source = @borrowers:$borrower_id:loans:$loan_id:principal:chargedOff allowing unbounded overdraft
+        destination = @borrowers:$borrower_id:loans:$loan_id:principal:outstanding
+      )
+
+      send $interest_remaining (
+        source = @platform:revenue:interest allowing unbounded overdraft
+        destination = @borrowers:$borrower_id:loans:$loan_id:interest:receivable
+      )
+
+      send $fees_remaining (
+        source = @platform:revenue:lateFees allowing unbounded overdraft
+        destination = @borrowers:$borrower_id:loans:$loan_id:fees:receivable
+      )
+
+      set_tx_meta("event_type", "loan_charged_off")
+      set_tx_meta("loan_id", $loan_id)
+      set_tx_meta("adjustment_flag", "true")
+  RECOVERY_RECEIVED:
+    description: Post-charge-off recovery collected against the charged-off balance
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $bank_id
+        string $borrower_id
+        string $loan_id
+        monetary $amount
+        string $recovery_id
+      }
+
+      send $amount (
+        source = @external:banks:$bank_id:operating allowing unbounded overdraft
+        destination = @borrowers:$borrower_id:loans:$loan_id:principal:chargedOff
+      )
+
+      set_tx_meta("event_type", "recovery_received")
+      set_tx_meta("loan_id", $loan_id)
+      set_tx_meta("recovery_id", $recovery_id)
+queries:
+  LOAN_POSITION:
+    description: Every balance bucket for one loan (principal, interest, fees, escrow, suspense)
+    resource: volumes
+    vars:
+      borrower_id:
+        type: string
+      loan_id:
+        type: string
+    params:
+      pageSize: 20
+    body:
+      $match:
+        address: "borrowers:${borrower_id}:loans:${loan_id}:"
+  BOOK_OUTSTANDING:
+    description: Total principal outstanding across the book (negative = receivable)
+    resource: balances
+    body:
+      $match:
+        address: "borrowers::loans::principal:outstanding"
+  INTEREST_INCOME:
+    description: Interest revenue recognized to date
+    resource: balances
+    body:
+      $match:
+        address: "platform:revenue:interest"
+  FEES_OUTSTANDING:
+    description: Late fees still owed across the book (negative = receivable)
+    resource: balances
+    body:
+      $match:
+        address: "borrowers::loans::fees:receivable"
+  UNAPPLIED_PAYMENTS:
+    description: Payments sitting in suspense awaiting allocation
+    resource: volumes
+    params:
+      pageSize: 100
+    body:
+      $match:
+        address: "borrowers::loans::suspense"
+  ESCROW_HELD:
+    description: Escrow balances held across all loans
+    resource: volumes
+    params:
+      pageSize: 100
+    body:
+      $match:
+        address: "borrowers::loans::escrow"

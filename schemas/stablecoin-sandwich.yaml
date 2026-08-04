@@ -10,6 +10,7 @@ meta:
   - stablecoin
   - payouts
   - fx
+  demoUrl: "https://formance-demo-portal.vercel.app/d/studio-stablecoin-sandwich"
 chart:
   external:
     rails:

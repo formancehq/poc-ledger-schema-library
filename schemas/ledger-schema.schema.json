@@ -17,24 +17,32 @@
     "transactions": {
       "type": "object",
       "description": "Named transaction patterns. Each value contains a description and a `script` block in Numscript.",
-      "additionalProperties": { "$ref": "#/$defs/transaction" }
+      "additionalProperties": {
+        "$ref": "#/$defs/transaction"
+      }
     },
     "queries": {
       "type": "object",
       "description": "Named query patterns rendered as runnable API calls.",
-      "additionalProperties": { "$ref": "#/$defs/query" }
+      "additionalProperties": {
+        "$ref": "#/$defs/query"
+      }
     }
   },
   "$defs": {
     "meta": {
       "type": "object",
-      "required": ["slug", "order", "name"],
+      "required": [
+        "slug",
+        "order",
+        "name"
+      ],
       "additionalProperties": false,
       "properties": {
         "slug": {
           "type": "string",
           "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
-          "description": "Kebab-case identifier. MUST equal the filename (without extension) — it is the docs `<LedgerSchema schema=\"…\"/>` lookup key and the studio gallery slug."
+          "description": "Kebab-case identifier. MUST equal the filename (without extension) \u2014 it is the docs `<LedgerSchema schema=\"\u2026\"/>` lookup key and the studio gallery slug."
         },
         "order": {
           "type": "integer",
@@ -51,7 +59,9 @@
         },
         "tags": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "uniqueItems": true,
           "description": "Category tags for filtering in the gallery."
         },
@@ -64,6 +74,12 @@
         "hiddenInStudio": {
           "type": "boolean",
           "description": "When true, the studio gallery omits this template entirely (platform-ui's codegen filters it out of the generated TEMPLATES registry, so its YAML never reaches the client bundle). The docs site still consumes it — see `docsUrl`. Use this for a recipe worth documenting that doesn't read as a business shape a prospect would pick off the gallery, which is a marketing surface. Defaults to false."
+        },
+        "demoUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://",
+          "description": "Absolute URL to an interactive demo of this template (the Formance demo portal). Optional \u2014 surfaced as a 'Visualize this' link in the studio gallery when present."
         }
       }
     },
@@ -84,7 +100,9 @@
           "description": "Default metadata applied to accounts matching this node. Each field is an object, conventionally `{ \"default\": <value> }`.",
           "additionalProperties": {
             "type": "object",
-            "properties": { "default": {} },
+            "properties": {
+              "default": {}
+            },
             "additionalProperties": true
           }
         },
@@ -95,14 +113,20 @@
       },
       "additionalProperties": {
         "anyOf": [
-          { "$ref": "#/$defs/chartNode" },
-          { "type": "null" }
+          {
+            "$ref": "#/$defs/chartNode"
+          },
+          {
+            "type": "null"
+          }
         ]
       }
     },
     "transaction": {
       "type": "object",
-      "required": ["script"],
+      "required": [
+        "script"
+      ],
       "additionalProperties": false,
       "properties": {
         "description": {
@@ -115,7 +139,10 @@
         },
         "interpreter": {
           "type": "string",
-          "enum": ["machine", "experimental"],
+          "enum": [
+            "machine",
+            "experimental"
+          ],
           "description": "Target interpreter. When omitted the validator infers it from the script content. Setting this explicitly is recommended when the snippet runs on the machine interpreter on purpose and must NOT regress."
         },
         "featureFlags": {
@@ -150,21 +177,37 @@
           "type": "string",
           "description": "Optional display label for the query."
         },
-        "description": { "type": "string" },
+        "description": {
+          "type": "string"
+        },
         "resource": {
           "type": "string",
-          "enum": ["accounts", "volumes", "transactions", "balances", "logs"]
+          "enum": [
+            "accounts",
+            "volumes",
+            "transactions",
+            "balances",
+            "logs"
+          ]
         },
         "vars": {
           "type": "object",
           "additionalProperties": {
             "type": "object",
-            "properties": { "type": { "type": "string" } },
+            "properties": {
+              "type": {
+                "type": "string"
+              }
+            },
             "additionalProperties": true
           }
         },
-        "params": { "type": "object" },
-        "body": { "type": "object" }
+        "params": {
+          "type": "object"
+        },
+        "body": {
+          "type": "object"
+        }
       }
     }
   }

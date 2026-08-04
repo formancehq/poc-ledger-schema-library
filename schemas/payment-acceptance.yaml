@@ -9,6 +9,7 @@ meta:
     - "acceptance"
     - "psp"
   docsUrl: "https://docs.formance.com/examples/advanced/payment-acceptance"
+  demoUrl: "https://formance-demo-portal.vercel.app/d/studio-payment-acceptance"
 chart:
   acquirers:
     $acquirer_id:

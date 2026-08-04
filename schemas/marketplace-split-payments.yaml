@@ -1,0 +1,247 @@
+# yaml-language-server: $schema=https://ds.formance.com/schemas/ledger-schema/extended
+meta:
+  slug: marketplace-split-payments
+  order: 12
+  name: Marketplace Split Payments
+  description: 'Buyer funds held in per-order escrow, split on acceptance into seller payable,
+    rolling reserve, and platform commission — with refunds, chargebacks, and seller payouts.'
+  tags:
+  - marketplace
+  - ecommerce
+  - payouts
+  - chargebacks
+  demoUrl: "https://formance-demo-portal.vercel.app/d/studio-marketplace-split-payments"
+chart:
+  external:
+    psp:
+      $psp_id:
+        .pattern: ^[a-z][a-zA-Z0-9_]*$
+        collections: {}
+        payouts: {}
+  platform:
+    escrow:
+      orders:
+        $order_id:
+          .pattern: ^[a-z][a-zA-Z0-9_]*$
+          held: {}
+    revenue:
+      commission: {}
+  sellers:
+    $seller_id:
+      .pattern: ^[a-z][a-zA-Z0-9_]*$
+      payable: {}
+      reserve: {}
+      payouts:
+        $payout_id:
+          .pattern: ^[a-z][a-zA-Z0-9_]*$
+          pending: {}
+      .self: {}
+transactions:
+  ORDER_CAPTURED:
+    description: Buyer's payment captured by the PSP and held in per-order escrow
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $psp_id
+        string $order_id
+        monetary $amount
+      }
+
+      send $amount (
+        source = @external:psp:$psp_id:collections allowing unbounded overdraft
+        destination = @platform:escrow:orders:$order_id:held
+      )
+
+      set_tx_meta("event_type", "order_captured")
+      set_tx_meta("order_id", $order_id)
+  ORDER_ACCEPTED_SPLIT:
+    description: >-
+      Order accepted: escrow splits into platform commission, the seller's
+      rolling reserve, and the seller's payable balance
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $order_id
+        string $seller_id
+        monetary $amount
+        monetary $commission
+        monetary $reserve
+      }
+
+      send $amount (
+        source = @platform:escrow:orders:$order_id:held
+        destination = {
+          max $commission to @platform:revenue:commission
+          max $reserve to @sellers:$seller_id:reserve
+          remaining to @sellers:$seller_id:payable
+        }
+      )
+
+      set_tx_meta("event_type", "order_accepted_split")
+      set_tx_meta("order_id", $order_id)
+      set_tx_meta("seller_id", $seller_id)
+  ORDER_REFUNDED_BEFORE_SPLIT:
+    description: Full refund of an order still sitting in escrow (seller never accepted)
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $psp_id
+        string $order_id
+        monetary $amount
+      }
+
+      send $amount (
+        source = @platform:escrow:orders:$order_id:held
+        destination = @external:psp:$psp_id:collections
+      )
+
+      set_tx_meta("event_type", "order_refunded_before_split")
+      set_tx_meta("order_id", $order_id)
+      set_tx_meta("adjustment_flag", "true")
+  ORDER_REFUNDED_AFTER_SPLIT:
+    description: >-
+      Post-acceptance refund: every slice of the original split is clawed back
+      to fund the buyer's refund. The platform's commission and the order's
+      rolling-reserve share come back first, and the rest comes from the
+      seller's payable (which may go negative if the seller was already paid out)
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $psp_id
+        string $order_id
+        string $seller_id
+        monetary $amount
+        monetary $commission_share
+        monetary $reserve_share
+      }
+
+      send $amount (
+        source = {
+          max $commission_share from @platform:revenue:commission allowing unbounded overdraft
+          max $reserve_share from @sellers:$seller_id:reserve
+          @sellers:$seller_id:payable allowing unbounded overdraft
+        }
+        destination = @external:psp:$psp_id:collections
+      )
+
+      set_tx_meta("event_type", "order_refunded_after_split")
+      set_tx_meta("order_id", $order_id)
+      set_tx_meta("adjustment_flag", "true")
+  CHARGEBACK:
+    description: >-
+      Chargeback pulled from the seller's rolling reserve first, any remainder
+      from their payable balance
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $psp_id
+        string $order_id
+        string $seller_id
+        monetary $amount
+      }
+
+      send $amount (
+        source = {
+          @sellers:$seller_id:reserve
+          @sellers:$seller_id:payable allowing unbounded overdraft
+        }
+        destination = @external:psp:$psp_id:collections
+      )
+
+      set_tx_meta("event_type", "chargeback")
+      set_tx_meta("order_id", $order_id)
+      set_tx_meta("adjustment_flag", "true")
+  RESERVE_RELEASED:
+    description: Rolling reserve released to the seller's payable balance after the hold period
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $seller_id
+        monetary $amount
+        string $period_id
+      }
+
+      send $amount (
+        source = @sellers:$seller_id:reserve
+        destination = @sellers:$seller_id:payable
+      )
+
+      set_tx_meta("event_type", "reserve_released")
+      set_tx_meta("period_id", $period_id)
+  SELLER_PAYOUT_INITIATED:
+    description: Seller payout reserved from their payable balance, pending PSP confirmation
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $seller_id
+        string $payout_id
+        monetary $amount
+      }
+
+      send $amount (
+        source = @sellers:$seller_id:payable
+        destination = @sellers:$seller_id:payouts:$payout_id:pending
+      )
+
+      set_tx_meta("event_type", "seller_payout_initiated")
+      set_tx_meta("payout_id", $payout_id)
+  SELLER_PAYOUT_SETTLED:
+    description: PSP confirms the payout; funds leave the platform
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $psp_id
+        string $seller_id
+        string $payout_id
+        monetary $amount
+      }
+
+      send $amount (
+        source = @sellers:$seller_id:payouts:$payout_id:pending
+        destination = @external:psp:$psp_id:payouts
+      )
+
+      set_tx_meta("event_type", "seller_payout_settled")
+      set_tx_meta("payout_id", $payout_id)
+queries:
+  SELLER_BALANCE:
+    description: A seller's current payable balance
+    resource: accounts
+    vars:
+      seller_id:
+        type: string
+    params:
+      pageSize: 1
+    body:
+      $match:
+        address: "sellers:${seller_id}:payable"
+  ESCROW_IN_FLIGHT:
+    description: Every order still held in escrow
+    resource: volumes
+    params:
+      pageSize: 100
+    body:
+      $match:
+        address: "platform:escrow:orders::held"
+  COMMISSION_EARNED:
+    description: Platform commission earned to date
+    resource: balances
+    body:
+      $match:
+        address: "platform:revenue:commission"
+  RESERVES_HELD:
+    description: Rolling reserves currently held across all sellers
+    resource: volumes
+    params:
+      pageSize: 100
+    body:
+      $match:
+        address: "sellers::reserve"
+  PAYOUTS_PENDING:
+    description: Seller payouts initiated but not yet confirmed by the PSP
+    resource: volumes
+    params:
+      pageSize: 100
+    body:
+      $match:
+        address: "sellers::payouts::pending"

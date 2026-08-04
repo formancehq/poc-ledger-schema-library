@@ -9,6 +9,7 @@ meta:
     - "fbo"
     - "banking"
   docsUrl: "https://docs.formance.com/examples/advanced/omnibus"
+  demoUrl: "https://formance-demo-portal.vercel.app/d/studio-omnibus"
 chart:
   banks:
     $bank_id:

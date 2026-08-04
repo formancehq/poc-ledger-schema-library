@@ -10,6 +10,7 @@ meta:
   - usage-billing
   - prepaid-credits
   - marketplace
+  demoUrl: "https://formance-demo-portal.vercel.app/d/studio-ai-compute-billing"
 chart:
   customers:
     $customerId:
