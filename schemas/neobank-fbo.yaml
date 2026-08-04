@@ -9,6 +9,7 @@ meta:
     - "fbo"
     - "reconciliation"
   docsUrl: "https://docs.formance.com/examples/advanced/neobank-fbo"
+  demoUrl: "https://formance-demo-portal.vercel.app/d/studio-neobank-fbo"
 chart:
   customers:
     $customerId:

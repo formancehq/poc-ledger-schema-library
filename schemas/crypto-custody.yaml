@@ -9,6 +9,7 @@ meta:
     - "custody"
     - "reconciliation"
   docsUrl: "https://docs.formance.com/examples/advanced/crypto-custody"
+  demoUrl: "https://formance-demo-portal.vercel.app/d/studio-crypto-custody"
 chart:
   customers:
     $customerId:

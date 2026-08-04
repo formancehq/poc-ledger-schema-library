@@ -1,0 +1,199 @@
+# yaml-language-server: $schema=https://ds.formance.com/schemas/ledger-schema/extended
+meta:
+  slug: earned-wage-access
+  order: 13
+  name: Earned Wage Access
+  description: 'Wages accrue daily against employer funding; employees draw advances (fee taken
+    up front) and payroll pays out whatever is left at the end of the period.'
+  tags:
+  - lending
+  - payroll
+  - baas
+  demoUrl: "https://formance-demo-portal.vercel.app/d/studio-earned-wage-access"
+chart:
+  external:
+    banks:
+      $bank_id:
+        .pattern: ^[a-z][a-zA-Z0-9_]*$
+        operating: {}
+  employers:
+    $employer_id:
+      .pattern: ^[a-z][a-zA-Z0-9_]*$
+      payrollFunding: {}
+  employees:
+    $employee_id:
+      .pattern: ^[a-z][a-zA-Z0-9_]*$
+      earned:
+        accrued: {}
+      advances:
+        $advance_id:
+          .pattern: ^[a-z][a-zA-Z0-9_]*$
+          disbursed: {}
+      .self: {}
+  platform:
+    revenue:
+      advanceFees: {}
+transactions:
+  EMPLOYER_PREFUND:
+    description: Employer wires payroll funding to the platform ahead of the pay period
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $bank_id
+        string $employer_id
+        monetary $amount
+        string $funding_id
+      }
+
+      send $amount (
+        source = @external:banks:$bank_id:operating allowing unbounded overdraft
+        destination = @employers:$employer_id:payrollFunding
+      )
+
+      set_tx_meta("event_type", "employer_prefund")
+      set_tx_meta("funding_id", $funding_id)
+  WAGES_ACCRUED:
+    description: A shift's earned wages recognized against the employer's funding
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $employer_id
+        string $employee_id
+        monetary $amount
+        string $shift_id
+      }
+
+      send $amount (
+        source = @employers:$employer_id:payrollFunding
+        destination = @employees:$employee_id:earned:accrued
+      )
+
+      set_tx_meta("event_type", "wages_accrued")
+      set_tx_meta("shift_id", $shift_id)
+      set_tx_meta("employer_id", $employer_id)
+  ACCRUAL_ADJUSTED:
+    description: Reversal of an accrual posted in error (e.g. a corrected timesheet)
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $employer_id
+        string $employee_id
+        monetary $amount
+        string $shift_id
+      }
+
+      send $amount (
+        source = @employees:$employee_id:earned:accrued
+        destination = @employers:$employer_id:payrollFunding
+      )
+
+      set_tx_meta("event_type", "accrual_adjusted")
+      set_tx_meta("shift_id", $shift_id)
+      set_tx_meta("adjustment_flag", "true")
+  ADVANCE_DISBURSED:
+    description: >-
+      Employee draws part of their earned wages early: the platform fee comes
+      out first and the rest is paid to their bank immediately
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $bank_id
+        string $employee_id
+        string $advance_id
+        monetary $amount
+        monetary $fee
+      }
+
+      send $amount (
+        source = @employees:$employee_id:earned:accrued
+        destination = {
+          max $fee to @platform:revenue:advanceFees
+          remaining to @employees:$employee_id:advances:$advance_id:disbursed
+        }
+      )
+
+      send [USD/2 *] (
+        source = @employees:$employee_id:advances:$advance_id:disbursed
+        destination = @external:banks:$bank_id:operating
+      )
+
+      set_tx_meta("event_type", "advance_disbursed")
+      set_tx_meta("advance_id", $advance_id)
+  PAYROLL_RUN:
+    description: >-
+      End-of-period payroll pays out the employee's remaining earned balance
+      (advances were already netted out when they were taken)
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $bank_id
+        string $employee_id
+        monetary $net_amount
+        string $payroll_id
+      }
+
+      send $net_amount (
+        source = @employees:$employee_id:earned:accrued
+        destination = @external:banks:$bank_id:operating
+      )
+
+      set_tx_meta("event_type", "payroll_run")
+      set_tx_meta("payroll_id", $payroll_id)
+  EMPLOYER_FUNDING_RETURNED:
+    description: Unused payroll funding returned to the employer after the period closes
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $bank_id
+        string $employer_id
+        monetary $amount
+        string $period_id
+      }
+
+      send $amount (
+        source = @employers:$employer_id:payrollFunding
+        destination = @external:banks:$bank_id:operating
+      )
+
+      set_tx_meta("event_type", "employer_funding_returned")
+      set_tx_meta("period_id", $period_id)
+queries:
+  EMPLOYEE_EARNED:
+    description: An employee's earned-but-unpaid wage balance
+    resource: accounts
+    vars:
+      employee_id:
+        type: string
+    params:
+      pageSize: 1
+    body:
+      $match:
+        address: "employees:${employee_id}:earned:accrued"
+  EWA_LIABILITY:
+    description: Total earned wages owed to employees right now
+    resource: balances
+    body:
+      $match:
+        address: "employees::earned:accrued"
+  EMPLOYER_FUNDING_REMAINING:
+    description: Undrawn payroll funding per employer
+    resource: volumes
+    params:
+      pageSize: 100
+    body:
+      $match:
+        address: "employers::payrollFunding"
+  ADVANCE_FEES_EARNED:
+    description: Platform revenue from advance fees
+    resource: balances
+    body:
+      $match:
+        address: "platform:revenue:advanceFees"
+  ADVANCES_TAKEN:
+    description: Every advance disbursement on the ledger
+    resource: transactions
+    params:
+      pageSize: 100
+    body:
+      $match:
+        metadata[event_type]: "advance_disbursed"

@@ -1,0 +1,261 @@
+# yaml-language-server: $schema=https://ds.formance.com/schemas/ledger-schema/extended
+meta:
+  slug: digital-wallet
+  order: 12
+  name: Digital Wallet
+  description: 'Closed-loop stored value: top-ups, P2P transfers, merchant payments with a platform
+    take rate, holds with partial capture, and withdrawals back to the bank.'
+  tags:
+  - banking
+  - fbo
+  - payments
+  demoUrl: "https://formance-demo-portal.vercel.app/d/studio-digital-wallet"
+chart:
+  external:
+    banks:
+      $bank_id:
+        .pattern: ^[a-z][a-zA-Z0-9_]*$
+        settlement: {}
+  users:
+    $user_id:
+      .pattern: ^[a-z][a-zA-Z0-9_]*$
+      available: {}
+      holds:
+        $hold_id:
+          .pattern: ^[a-z][a-zA-Z0-9_]*$
+      withdrawals:
+        $withdrawal_id:
+          .pattern: ^[a-z][a-zA-Z0-9_]*$
+          pending: {}
+      .self: {}
+  merchants:
+    $merchant_id:
+      .pattern: ^[a-z][a-zA-Z0-9_]*$
+      payable: {}
+  platform:
+    revenue:
+      fees: {}
+transactions:
+  WALLET_TOPUP:
+    description: User tops up their wallet; cash settles into the platform's bank account
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $bank_id
+        string $user_id
+        monetary $amount
+        string $topup_id
+      }
+
+      send $amount (
+        source = @external:banks:$bank_id:settlement allowing unbounded overdraft
+        destination = @users:$user_id:available
+      )
+
+      set_tx_meta("event_type", "wallet_topup")
+      set_tx_meta("topup_id", $topup_id)
+  P2P_TRANSFER:
+    description: Instant wallet-to-wallet transfer between two users
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $from_user_id
+        string $to_user_id
+        monetary $amount
+        string $transfer_id
+      }
+
+      send $amount (
+        source = @users:$from_user_id:available
+        destination = @users:$to_user_id:available
+      )
+
+      set_tx_meta("event_type", "p2p_transfer")
+      set_tx_meta("transfer_id", $transfer_id)
+  MERCHANT_PAYMENT:
+    description: User pays a merchant in-wallet; the platform keeps its take rate
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $user_id
+        string $merchant_id
+        monetary $amount
+        monetary $fee
+        string $payment_id
+      }
+
+      send $amount (
+        source = @users:$user_id:available
+        destination = {
+          max $fee to @platform:revenue:fees
+          remaining to @merchants:$merchant_id:payable
+        }
+      )
+
+      set_tx_meta("event_type", "merchant_payment")
+      set_tx_meta("payment_id", $payment_id)
+      set_tx_meta("merchant_id", $merchant_id)
+  PAYMENT_HOLD:
+    description: Authorization hold placed on a user's balance before capture
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $user_id
+        string $hold_id
+        monetary $amount
+      }
+
+      send $amount (
+        source = @users:$user_id:available
+        destination = @users:$user_id:holds:$hold_id
+      )
+
+      set_tx_meta("event_type", "payment_hold")
+      set_tx_meta("hold_id", $hold_id)
+  HOLD_CAPTURE:
+    description: >-
+      Hold captured for the final amount (fee split applied); any remainder is
+      released back to the user
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $user_id
+        string $merchant_id
+        string $hold_id
+        monetary $hold_amount
+        monetary $capture_amount
+        monetary $fee
+      }
+
+      send $hold_amount (
+        source = @users:$user_id:holds:$hold_id
+        destination = @users:$user_id:available
+      )
+
+      send $capture_amount (
+        source = @users:$user_id:available
+        destination = {
+          max $fee to @platform:revenue:fees
+          remaining to @merchants:$merchant_id:payable
+        }
+      )
+
+      set_tx_meta("event_type", "hold_capture")
+      set_tx_meta("hold_id", $hold_id)
+      set_tx_meta("merchant_id", $merchant_id)
+  HOLD_RELEASE:
+    description: Hold released in full back to the user's available balance
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $user_id
+        string $hold_id
+        monetary $amount
+      }
+
+      send $amount (
+        source = @users:$user_id:holds:$hold_id
+        destination = @users:$user_id:available
+      )
+
+      set_tx_meta("event_type", "hold_release")
+      set_tx_meta("hold_id", $hold_id)
+      set_tx_meta("adjustment_flag", "true")
+  WALLET_WITHDRAWAL_INITIATED:
+    description: User withdraws to their bank; funds reserved while the transfer is in flight
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $user_id
+        string $withdrawal_id
+        monetary $amount
+      }
+
+      send $amount (
+        source = @users:$user_id:available
+        destination = @users:$user_id:withdrawals:$withdrawal_id:pending
+      )
+
+      set_tx_meta("event_type", "wallet_withdrawal_initiated")
+      set_tx_meta("withdrawal_id", $withdrawal_id)
+  WALLET_WITHDRAWAL_SETTLED:
+    description: Bank confirms the withdrawal; stored value leaves the platform
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $bank_id
+        string $user_id
+        string $withdrawal_id
+        monetary $amount
+      }
+
+      send $amount (
+        source = @users:$user_id:withdrawals:$withdrawal_id:pending
+        destination = @external:banks:$bank_id:settlement
+      )
+
+      set_tx_meta("event_type", "wallet_withdrawal_settled")
+      set_tx_meta("withdrawal_id", $withdrawal_id)
+  MERCHANT_SETTLEMENT:
+    description: Accumulated merchant payable settled out to the merchant's bank
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $bank_id
+        string $merchant_id
+        monetary $amount
+        string $settlement_id
+      }
+
+      send $amount (
+        source = @merchants:$merchant_id:payable
+        destination = @external:banks:$bank_id:settlement
+      )
+
+      set_tx_meta("event_type", "merchant_settlement")
+      set_tx_meta("settlement_id", $settlement_id)
+queries:
+  USER_BALANCE:
+    description: A user's available wallet balance
+    resource: accounts
+    vars:
+      user_id:
+        type: string
+    params:
+      pageSize: 1
+    body:
+      $match:
+        address: "users:${user_id}:available"
+  TOTAL_WALLET_LIABILITY:
+    description: Total stored value owed to users (available + held + in-flight withdrawals)
+    resource: balances
+    body:
+      $or:
+      - $match:
+          address: "users::available"
+      - $match:
+          address: "users::holds:"
+      - $match:
+          address: "users::withdrawals::pending"
+  FLOAT_COVERAGE:
+    description: Cash at the bank backing the wallets (mirror account, negative by convention)
+    resource: balances
+    body:
+      $match:
+        address: "external:banks::settlement"
+  OPEN_HOLDS:
+    description: Authorization holds not yet captured or released
+    resource: volumes
+    params:
+      pageSize: 100
+    body:
+      $match:
+        address: "users::holds:"
+  MERCHANT_PAYABLES:
+    description: What the platform currently owes each merchant
+    resource: volumes
+    params:
+      pageSize: 100
+    body:
+      $match:
+        address: "merchants::payable"

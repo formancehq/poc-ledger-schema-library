@@ -9,6 +9,7 @@ meta:
     - "cards"
     - "baas"
   docsUrl: "https://docs.formance.com/examples/advanced/issuing-financial-host"
+  demoUrl: "https://formance-demo-portal.vercel.app/d/studio-issuing-financial-host"
 chart:
   cardholder:
     $account_id:

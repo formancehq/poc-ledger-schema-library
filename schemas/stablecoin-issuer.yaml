@@ -9,6 +9,7 @@ meta:
     - "mint-redeem"
     - "reserves"
   docsUrl: "https://docs.formance.com/examples/advanced/stablecoin-issuer"
+  demoUrl: "https://formance-demo-portal.vercel.app/d/studio-stablecoin-issuer"
 chart:
   platform:
     banks:

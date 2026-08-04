@@ -9,6 +9,7 @@ meta:
     - 'onramp-offramp'
     - 'psp'
   docsUrl: 'https://docs.formance.com/examples/advanced/stablecoin-operations'
+  demoUrl: "https://formance-demo-portal.vercel.app/d/studio-stablecoin-operations"
 chart:
   psp:
     $psp_id:

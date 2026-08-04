@@ -1,0 +1,231 @@
+# yaml-language-server: $schema=https://ds.formance.com/schemas/ledger-schema/extended
+meta:
+  slug: remittance-fx
+  order: 15
+  name: Cross-Border Remittance with FX
+  description: 'Classic corridor remittance: collect in one currency, convert through an FX desk
+    with fee and spread carved out, pay out on the destination rail — every leg auditable.'
+  tags:
+  - cross-border
+  - fx
+  - payouts
+  - payments
+  demoUrl: "https://formance-demo-portal.vercel.app/d/studio-remittance-fx"
+chart:
+  external:
+    rails:
+      $rail_id:
+        .pattern: ^[a-z][a-zA-Z0-9_]*$
+        collections: {}
+        payouts: {}
+  platform:
+    rails:
+      $rail_id:
+        .pattern: ^[a-z][a-zA-Z0-9_]*$
+        collections: {}
+        payouts:
+          $transfer_id:
+            .pattern: ^[a-z][a-zA-Z0-9_]*$
+            pending: {}
+        .self: {}
+    revenue:
+      fees: {}
+      fxSpread: {}
+  exchanges:
+    fx:
+      $conversion_id:
+        .pattern: ^[a-z][a-zA-Z0-9_]*$
+  counterparties:
+    fxDesks:
+      $desk_id:
+        .pattern: ^[a-z][a-zA-Z0-9_]*$
+  beneficiaries:
+    $beneficiary_id:
+      .pattern: ^[a-z][a-zA-Z0-9_]*$
+      payouts:
+        $transfer_id:
+          .pattern: ^[a-z][a-zA-Z0-9_]*$
+          payable: {}
+transactions:
+  COLLECTION_RECEIVED:
+    description: Sender's funds collected on the origin rail
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $rail_id
+        string $transfer_id
+        monetary $amount
+      }
+
+      send $amount (
+        source = @external:rails:$rail_id:collections allowing unbounded overdraft
+        destination = @platform:rails:$rail_id:collections
+      )
+
+      set_tx_meta("event_type", "collection_received")
+      set_tx_meta("transfer_id", $transfer_id)
+  FX_CONVERTED:
+    description: >-
+      Origin currency converted at the FX desk through a conversion pivot: the
+      platform fee comes out of the source leg, the desk supplies the
+      destination currency, and the spread is carved out before the beneficiary
+      is credited
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $rail_id
+        string $desk_id
+        string $conversion_id
+        string $transfer_id
+        string $beneficiary_id
+        monetary $collected
+        monetary $fee
+        monetary $dest_gross
+        monetary $spread
+      }
+
+      send $collected (
+        source = @platform:rails:$rail_id:collections
+        destination = {
+          max $fee to @platform:revenue:fees
+          remaining to @exchanges:fx:$conversion_id
+        }
+      )
+
+      send [USD/2 *] (
+        source = @exchanges:fx:$conversion_id
+        destination = @counterparties:fxDesks:$desk_id
+      )
+
+      send $dest_gross (
+        source = @counterparties:fxDesks:$desk_id allowing unbounded overdraft
+        destination = @exchanges:fx:$conversion_id
+      )
+
+      send $dest_gross (
+        source = @exchanges:fx:$conversion_id
+        destination = {
+          max $spread to @platform:revenue:fxSpread
+          remaining to @beneficiaries:$beneficiary_id:payouts:$transfer_id:payable
+        }
+      )
+
+      set_tx_meta("event_type", "fx_converted")
+      set_tx_meta("conversion_id", $conversion_id)
+      set_tx_meta("transfer_id", $transfer_id)
+  PAYOUT_INITIATED:
+    description: Beneficiary's payable handed to the destination rail for disbursement
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $rail_id
+        string $transfer_id
+        string $beneficiary_id
+        monetary $amount
+      }
+
+      send $amount (
+        source = @beneficiaries:$beneficiary_id:payouts:$transfer_id:payable
+        destination = @platform:rails:$rail_id:payouts:$transfer_id:pending
+      )
+
+      set_tx_meta("event_type", "payout_initiated")
+      set_tx_meta("transfer_id", $transfer_id)
+  PAYOUT_SETTLED:
+    description: Destination rail confirms delivery; funds leave the platform
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $rail_id
+        string $transfer_id
+        monetary $amount
+      }
+
+      send $amount (
+        source = @platform:rails:$rail_id:payouts:$transfer_id:pending
+        destination = @external:rails:$rail_id:payouts
+      )
+
+      set_tx_meta("event_type", "payout_settled")
+      set_tx_meta("transfer_id", $transfer_id)
+  PAYOUT_RETURNED:
+    description: >-
+      Destination rail bounces the payout (bad account details); funds return
+      to the beneficiary's payable for retry
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $rail_id
+        string $transfer_id
+        string $beneficiary_id
+        monetary $amount
+      }
+
+      send $amount (
+        source = @platform:rails:$rail_id:payouts:$transfer_id:pending
+        destination = @beneficiaries:$beneficiary_id:payouts:$transfer_id:payable
+      )
+
+      set_tx_meta("event_type", "payout_returned")
+      set_tx_meta("transfer_id", $transfer_id)
+      set_tx_meta("adjustment_flag", "true")
+  DESK_SETTLED:
+    description: >-
+      Periodic settlement with the FX desk: the origin currency accumulated at
+      the desk is paid out over the correspondent rail
+    script: |-
+      #![feature("experimental-account-interpolation")]
+      vars {
+        string $rail_id
+        string $desk_id
+        monetary $amount
+        string $settlement_id
+      }
+
+      send $amount (
+        source = @counterparties:fxDesks:$desk_id
+        destination = @external:rails:$rail_id:payouts
+      )
+
+      set_tx_meta("event_type", "desk_settled")
+      set_tx_meta("settlement_id", $settlement_id)
+queries:
+  TRANSFER_TRAIL:
+    description: Every posting for one transfer, end to end
+    resource: transactions
+    vars:
+      transfer_id:
+        type: string
+    params:
+      pageSize: 20
+    body:
+      $match:
+        metadata[transfer_id]: "${transfer_id}"
+  PAYOUTS_IN_FLIGHT:
+    description: Transfers handed to a rail but not yet confirmed
+    resource: volumes
+    params:
+      pageSize: 100
+    body:
+      $match:
+        address: "platform:rails::payouts::pending"
+  FEE_REVENUE:
+    description: Transfer fee revenue to date
+    resource: balances
+    body:
+      $match:
+        address: "platform:revenue:fees"
+  FX_SPREAD_REVENUE:
+    description: FX spread revenue to date
+    resource: balances
+    body:
+      $match:
+        address: "platform:revenue:fxSpread"
+  DESK_POSITION:
+    description: Open position with each FX desk (what we hold there minus what they fronted)
+    resource: volumes
+    params:
+      pageSize: 100
+    body:
+      $match:
+        address: "counterparties:fxDesks:"
