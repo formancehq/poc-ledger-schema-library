@@ -28,6 +28,8 @@ chart:
             chargedOff: {}
           interest:
             receivable: {}
+          fees:
+            receivable: {}
           escrow: {}
           suspense: {}
           .self: {}
@@ -76,7 +78,9 @@ transactions:
       set_tx_meta("loan_id", $loan_id)
       set_tx_meta("period_id", $period_id)
   LATE_FEE_ASSESSED:
-    description: Late fee assessed on a missed installment
+    description: >-
+      Late fee assessed on a missed installment: owed on the loan's own fee
+      receivable, recognized as fee revenue
     script: |-
       #![feature("experimental-account-interpolation")]
       vars {
@@ -87,7 +91,7 @@ transactions:
       }
 
       send $amount (
-        source = @borrowers:$borrower_id:loans:$loan_id:interest:receivable allowing unbounded overdraft
+        source = @borrowers:$borrower_id:loans:$loan_id:fees:receivable allowing unbounded overdraft
         destination = @platform:revenue:lateFees
       )
 
@@ -116,14 +120,15 @@ transactions:
       set_tx_meta("payment_id", $payment_id)
   PAYMENT_APPLIED:
     description: >-
-      Suspense allocated waterfall-style: interest and fees owed first, escrow
-      next, and whatever remains reduces principal
+      Suspense allocated waterfall-style: fees owed first, then interest, then
+      escrow, and whatever remains reduces principal
     script: |-
       #![feature("experimental-account-interpolation")]
       vars {
         string $borrower_id
         string $loan_id
         monetary $amount
+        monetary $fees_due
         monetary $interest_due
         monetary $escrow_due
         string $payment_id
@@ -132,6 +137,7 @@ transactions:
       send $amount (
         source = @borrowers:$borrower_id:loans:$loan_id:suspense
         destination = {
+          max $fees_due to @borrowers:$borrower_id:loans:$loan_id:fees:receivable
           max $interest_due to @borrowers:$borrower_id:loans:$loan_id:interest:receivable
           max $escrow_due to @borrowers:$borrower_id:loans:$loan_id:escrow
           remaining to @borrowers:$borrower_id:loans:$loan_id:principal:outstanding
@@ -164,8 +170,8 @@ transactions:
   LOAN_CHARGED_OFF:
     description: >-
       Charge-off: the principal receivable moves to the charged-off account
-      (recoveries still track against it) and uncollected accrued interest is
-      reversed out of revenue
+      (recoveries still track against it) and uncollected accrued interest and
+      late fees are reversed out of their own revenue lines
     script: |-
       #![feature("experimental-account-interpolation")]
       vars {
@@ -173,6 +179,7 @@ transactions:
         string $loan_id
         monetary $principal_remaining
         monetary $interest_remaining
+        monetary $fees_remaining
       }
 
       send $principal_remaining (
@@ -183,6 +190,11 @@ transactions:
       send $interest_remaining (
         source = @platform:revenue:interest allowing unbounded overdraft
         destination = @borrowers:$borrower_id:loans:$loan_id:interest:receivable
+      )
+
+      send $fees_remaining (
+        source = @platform:revenue:lateFees allowing unbounded overdraft
+        destination = @borrowers:$borrower_id:loans:$loan_id:fees:receivable
       )
 
       set_tx_meta("event_type", "loan_charged_off")
@@ -210,7 +222,7 @@ transactions:
       set_tx_meta("recovery_id", $recovery_id)
 queries:
   LOAN_POSITION:
-    description: Every balance bucket for one loan (principal, interest, escrow, suspense)
+    description: Every balance bucket for one loan (principal, interest, fees, escrow, suspense)
     resource: volumes
     vars:
       borrower_id:
@@ -220,11 +232,8 @@ queries:
     params:
       pageSize: 20
     body:
-      $or:
-      - $match:
-          address: "borrowers:${borrower_id}:loans:${loan_id}:"
-      - $match:
-          address: "borrowers:${borrower_id}:loans:${loan_id}::"
+      $match:
+        address: "borrowers:${borrower_id}:loans:${loan_id}:"
   BOOK_OUTSTANDING:
     description: Total principal outstanding across the book (negative = receivable)
     resource: balances
@@ -237,6 +246,12 @@ queries:
     body:
       $match:
         address: "platform:revenue:interest"
+  FEES_OUTSTANDING:
+    description: Late fees still owed across the book (negative = receivable)
+    resource: balances
+    body:
+      $match:
+        address: "borrowers::loans::fees:receivable"
   UNAPPLIED_PAYMENTS:
     description: Payments sitting in suspense awaiting allocation
     resource: volumes

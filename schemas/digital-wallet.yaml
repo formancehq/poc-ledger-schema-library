@@ -238,7 +238,9 @@ queries:
       - $match:
           address: "users::withdrawals::pending"
   FLOAT_COVERAGE:
-    description: Cash at the bank backing the wallets (mirror account, negative by convention)
+    description: >-
+      Cash at the bank (mirror account, negative by convention); its magnitude
+      equals user wallets + merchant payables + platform fees
     resource: balances
     body:
       $match:

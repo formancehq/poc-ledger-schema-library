@@ -67,9 +67,10 @@ transactions:
   FX_CONVERTED:
     description: >-
       Origin currency converted at the FX desk through a conversion pivot: the
-      platform fee comes out of the source leg, the desk supplies the
-      destination currency, and the spread is carved out before the beneficiary
-      is credited
+      collected amount enters the pivot, the platform fee is carved out as the
+      origin leg goes to the desk, the desk supplies the destination currency,
+      and the spread is carved out before the beneficiary is credited. The
+      pivot nets to zero in both currencies whatever the corridor's assets are
     script: |-
       #![feature("experimental-account-interpolation")]
       vars {
@@ -86,15 +87,15 @@ transactions:
 
       send $collected (
         source = @platform:rails:$rail_id:collections
-        destination = {
-          max $fee to @platform:revenue:fees
-          remaining to @exchanges:fx:$conversion_id
-        }
+        destination = @exchanges:fx:$conversion_id
       )
 
-      send [USD/2 *] (
+      send $collected (
         source = @exchanges:fx:$conversion_id
-        destination = @counterparties:fxDesks:$desk_id
+        destination = {
+          max $fee to @platform:revenue:fees
+          remaining to @counterparties:fxDesks:$desk_id
+        }
       )
 
       send $dest_gross (

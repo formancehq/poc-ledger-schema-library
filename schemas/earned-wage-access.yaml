@@ -92,8 +92,9 @@ transactions:
       set_tx_meta("adjustment_flag", "true")
   ADVANCE_DISBURSED:
     description: >-
-      Employee draws part of their earned wages early: the platform fee comes
-      out first and the rest is paid to their bank immediately
+      Employee draws part of their earned wages early: the gross draw is
+      tracked on a per-advance account, then the platform fee comes out and
+      the rest is paid to their bank immediately
     script: |-
       #![feature("experimental-account-interpolation")]
       vars {
@@ -106,15 +107,15 @@ transactions:
 
       send $amount (
         source = @employees:$employee_id:earned:accrued
-        destination = {
-          max $fee to @platform:revenue:advanceFees
-          remaining to @employees:$employee_id:advances:$advance_id:disbursed
-        }
+        destination = @employees:$employee_id:advances:$advance_id:disbursed
       )
 
-      send [USD/2 *] (
+      send $amount (
         source = @employees:$employee_id:advances:$advance_id:disbursed
-        destination = @external:banks:$bank_id:operating
+        destination = {
+          max $fee to @platform:revenue:advanceFees
+          remaining to @external:banks:$bank_id:operating
+        }
       )
 
       set_tx_meta("event_type", "advance_disbursed")

@@ -26,8 +26,6 @@ chart:
           held: {}
     revenue:
       commission: {}
-    expense:
-      chargebacks: {}
   sellers:
     $seller_id:
       .pattern: ^[a-z][a-zA-Z0-9_]*$
@@ -102,25 +100,27 @@ transactions:
       set_tx_meta("adjustment_flag", "true")
   ORDER_REFUNDED_AFTER_SPLIT:
     description: >-
-      Post-acceptance refund: the seller's payable and the platform's
-      commission are both clawed back to fund the buyer's refund
+      Post-acceptance refund: every slice of the original split is clawed back
+      to fund the buyer's refund. The platform's commission and the order's
+      rolling-reserve share come back first, and the rest comes from the
+      seller's payable (which may go negative if the seller was already paid out)
     script: |-
       #![feature("experimental-account-interpolation")]
       vars {
         string $psp_id
         string $order_id
         string $seller_id
-        monetary $seller_share
+        monetary $amount
         monetary $commission_share
+        monetary $reserve_share
       }
 
-      send $seller_share (
-        source = @sellers:$seller_id:payable allowing unbounded overdraft
-        destination = @external:psp:$psp_id:collections
-      )
-
-      send $commission_share (
-        source = @platform:revenue:commission allowing unbounded overdraft
+      send $amount (
+        source = {
+          max $commission_share from @platform:revenue:commission allowing unbounded overdraft
+          max $reserve_share from @sellers:$seller_id:reserve
+          @sellers:$seller_id:payable allowing unbounded overdraft
+        }
         destination = @external:psp:$psp_id:collections
       )
 
