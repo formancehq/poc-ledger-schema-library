@@ -12,18 +12,18 @@ meta:
   demoUrl: "https://formance-demo-portal.vercel.app/d/studio-neobank-fbo"
 chart:
   customers:
-    $customerId:
+    $customer_id:
       .pattern: ^[a-zA-Z0-9_-]+$
       available: {}
       holds:
-        $authId:
+        $auth_id:
           .pattern: ^[a-zA-Z0-9_-]+$
       withdrawals:
-        $withdrawalId:
+        $withdrawal_id:
           .pattern: ^[a-zA-Z0-9_-]+$
           pending: {}
       advances:
-        $advanceId:
+        $advance_id:
           .pattern: ^[a-zA-Z0-9_-]+$
           outstanding: {}
       .self: {}
@@ -45,8 +45,8 @@ transactions:
     description: >-
       Inbound ACH direct deposit settled into the FBO and credited to the
       customer
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         monetary $amount
@@ -64,8 +64,8 @@ transactions:
       set_tx_meta("originator", $originator)
   INCOMING_WIRE:
     description: Inbound wire settled into the FBO and credited to the customer
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         monetary $amount
@@ -83,8 +83,8 @@ transactions:
       set_tx_meta("originator", $originator)
   ACH_DEPOSIT_RETURN:
     description: Reversal of a settled ACH deposit returned by the originating bank
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         monetary $amount
@@ -102,8 +102,8 @@ transactions:
       set_tx_meta("adjusted_posting_event_id", $deposit_id)
   CARD_AUTH:
     description: Debit-card authorization places a hold on the customer's available balance
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         string $auth_id
@@ -121,8 +121,8 @@ transactions:
     description: >-
       Merchant-initiated reversal of a card authorization; hold returns to
       available
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         string $auth_id
@@ -140,8 +140,8 @@ transactions:
       set_tx_meta("adjusted_posting_event_id", $auth_id)
   CARD_AUTH_EXPIRE:
     description: Authorization hold expires unused; remaining hold returns to available
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         string $auth_id
@@ -161,8 +161,8 @@ transactions:
     description: >-
       Capture against an authorization; captured amount leaves the FBO,
       remainder restored
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         string $auth_id
@@ -182,8 +182,8 @@ transactions:
       set_tx_meta("auth_id", $auth_id)
   CARD_REFUND:
     description: Merchant refund of a prior capture credited to the customer
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         monetary $amount
@@ -202,8 +202,8 @@ transactions:
       set_tx_meta("adjusted_posting_event_id", $original_capture_id)
   P2P_TRANSFER:
     description: Instant in-ledger transfer between two customers; never touches the bank
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $from_customer_id
         account $to_customer_id
@@ -222,8 +222,8 @@ transactions:
     description: >-
       Customer-requested outbound ACH withdrawal earmarked from available to
       pending
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         string $withdrawal_id
@@ -239,8 +239,8 @@ transactions:
       set_tx_meta("withdrawal_id", $withdrawal_id)
   ACH_WITHDRAWAL_SETTLE:
     description: Outbound ACH settles; pending funds leave the FBO
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         string $withdrawal_id
@@ -256,8 +256,8 @@ transactions:
       set_tx_meta("withdrawal_id", $withdrawal_id)
   ACH_WITHDRAWAL_RETURN:
     description: Outbound ACH failed or returned; pending funds restored to available
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         string $withdrawal_id
@@ -277,8 +277,8 @@ transactions:
     description: >-
       Platform fronts an early-access advance; credited to available, booked as
       a receivable
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         string $advance_id
@@ -294,8 +294,8 @@ transactions:
       set_tx_meta("advance_id", $advance_id)
   ADVANCE_SETTLEMENT:
     description: Expected deposit settles; repays the advance first, remainder to available
-    interpreter: experimental
     script: |-
+      #![feature("experimental-overdraft-function", "experimental-account-interpolation")]
       vars {
         account $customer_id
         string $advance_id
@@ -317,8 +317,8 @@ transactions:
     description: >-
       Unrecoverable advance written off to loss; platform funds the FBO from
       corporate
-    interpreter: experimental
     script: |-
+      #![feature("experimental-overdraft-function", "experimental-account-interpolation")]
       vars {
         account $customer_id
         string $advance_id
@@ -341,7 +341,6 @@ transactions:
       set_tx_meta("adjusted_posting_event_id", $advance_id)
   FBO_INTEREST_SWEEP:
     description: Monthly sponsor interest on the FBO recognized as platform revenue
-    interpreter: machine
     script: |-
       vars {
         monetary $amount
@@ -357,7 +356,6 @@ transactions:
       set_tx_meta("period_id", $period_id)
   OPERATING_MOVEMENT_TO_CORPORATE:
     description: Weekly sweep of platform float from the FBO buffer to the corporate bank
-    interpreter: machine
     script: |-
       vars {
         monetary $amount
@@ -380,7 +378,6 @@ transactions:
     description: >-
       Weekly top-up of platform float from the corporate bank into the FBO
       buffer
-    interpreter: machine
     script: |-
       vars {
         monetary $amount
@@ -438,11 +435,11 @@ queries:
       balance read.
     resource: accounts
     vars:
-      customerId:
+      customer_id:
         type: string
     body:
       $match:
-        address: customers:${customerId}:available
+        address: customers:${customer_id}:available
   customer_total_holds:
     name: Customer total holds
     description: >-
@@ -451,11 +448,11 @@ queries:
       customer's gross balance.
     resource: accounts
     vars:
-      customerId:
+      customer_id:
         type: string
     body:
       $match:
-        address: 'customers:${customerId}:holds:'
+        address: 'customers:${customer_id}:holds:'
   customer_full_position:
     name: Customer full position
     description: >-
@@ -464,11 +461,11 @@ queries:
       (account, asset, balance) triple.
     resource: accounts
     vars:
-      customerId:
+      customer_id:
         type: string
     body:
       $match:
-        address: 'customers:${customerId}:'
+        address: 'customers:${customer_id}:'
   total_customer_spendable_and_held_liability:
     name: Total customer spendable and held liability
     description: >-
@@ -593,11 +590,11 @@ queries:
       balance questions.
     resource: transactions
     vars:
-      customerId:
+      customer_id:
         type: string
     body:
       $match:
-        account: 'customers:${customerId}:'
+        account: 'customers:${customer_id}:'
   authorization_lifecycle_audit:
     name: Authorization lifecycle audit
     description: >-
@@ -605,10 +602,10 @@ queries:
       expire), identified by the per-hold account.
     resource: transactions
     vars:
-      customerId:
+      customer_id:
         type: string
-      authId:
+      auth_id:
         type: string
     body:
       $match:
-        account: 'customers:${customerId}:holds:${authId}'
+        account: 'customers:${customer_id}:holds:${auth_id}'

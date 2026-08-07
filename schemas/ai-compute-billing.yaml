@@ -13,12 +13,12 @@ meta:
   demoUrl: "https://formance-demo-portal.vercel.app/d/studio-ai-compute-billing"
 chart:
   customers:
-    $customerId:
+    $customer_id:
       .pattern: ^[a-z][a-z0-9]*$
       credits:
         available: {}
       reservations:
-        $reservationId:
+        $reservation_id:
           .pattern: ^[a-z][a-z0-9]*$
           fee:
             deferred: {}
@@ -26,23 +26,23 @@ chart:
             reserved: {}
           .self: {}
       refunds:
-        $refundId:
+        $refund_id:
           .pattern: ^[a-z][a-z0-9]*$
           pending: {}
       .self: {}
     .self: {}
   providers:
-    $providerId:
+    $provider_id:
       .pattern: ^[a-z][a-z0-9]*$
       payable: {}
       payouts:
-        $payoutId:
+        $payout_id:
           .pattern: ^[a-z][a-z0-9]*$
           pending: {}
     .self: {}
   platform:
     banks:
-      $bankId:
+      $bank_id:
         .pattern: ^[a-z][a-z0-9]*$
         main: {}
     issuance:

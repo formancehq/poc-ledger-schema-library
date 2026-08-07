@@ -228,7 +228,9 @@ queries:
         address: "users:${user_id}:available"
   TOTAL_WALLET_LIABILITY:
     description: Total stored value owed to users (available + held + in-flight withdrawals)
-    resource: balances
+    resource: volumes
+    params:
+      groupBy: 1
     body:
       $or:
       - $match:
@@ -241,7 +243,9 @@ queries:
     description: >-
       Cash at the bank (mirror account, negative by convention); its magnitude
       equals user wallets + merchant payables + platform fees
-    resource: balances
+    resource: volumes
+    params:
+      groupBy: 2
     body:
       $match:
         address: "external:banks::settlement"

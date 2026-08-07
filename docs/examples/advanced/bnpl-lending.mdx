@@ -53,13 +53,13 @@ Each borrower holds one or more `plans`, and each plan is broken into numbered `
 
 <LedgerSchema schema="bnpl-lending" chart="counterparties" />
 
-The external parties the platform transacts with. `merchants:$merchantId:payable` is what the platform owes each merchant — a **liability** accrued at origination and drained to zero by the weekly settlement run. `psp:$pspId:collections:pending` is the PSP collection float: cash the payment processor has collected from shoppers on the platform's behalf but not yet remitted to the operating bank.
+The external parties the platform transacts with. `merchants:$merchant_id:payable` is what the platform owes each merchant — a **liability** accrued at origination and drained to zero by the weekly settlement run. `psp:$psp_id:collections:pending` is the PSP collection float: cash the payment processor has collected from shoppers on the platform's behalf but not yet remitted to the operating bank.
 
 ### Platform
 
 <LedgerSchema schema="bnpl-lending" chart="platform" />
 
-The platform's own accounts. `banks:$bankId:operating` holds the cash position at the partner bank. The `revenue` group breaks recognized income out by stream: `revenue:interest`, `revenue:fees:late`, and `revenue:fees:merchantDiscount` — these follow standard income-statement conventions and only ever receive cash that has actually been collected.
+The platform's own accounts. `banks:$bank_id:operating` holds the cash position at the partner bank. The `revenue` group breaks recognized income out by stream: `revenue:interest`, `revenue:fees:late`, and `revenue:fees:merchantDiscount` — these follow standard income-statement conventions and only ever receive cash that has actually been collected.
 
 ## Flows
 

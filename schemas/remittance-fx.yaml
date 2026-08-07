@@ -212,13 +212,13 @@ queries:
         address: "platform:rails::payouts::pending"
   FEE_REVENUE:
     description: Transfer fee revenue to date
-    resource: balances
+    resource: volumes
     body:
       $match:
         address: "platform:revenue:fees"
   FX_SPREAD_REVENUE:
     description: FX spread revenue to date
-    resource: balances
+    resource: volumes
     body:
       $match:
         address: "platform:revenue:fxSpread"

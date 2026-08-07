@@ -172,7 +172,9 @@ queries:
         address: "employees:${employee_id}:earned:accrued"
   EWA_LIABILITY:
     description: Total earned wages owed to employees right now
-    resource: balances
+    resource: volumes
+    params:
+      groupBy: 1
     body:
       $match:
         address: "employees::earned:accrued"
@@ -186,7 +188,7 @@ queries:
         address: "employers::payrollFunding"
   ADVANCE_FEES_EARNED:
     description: Platform revenue from advance fees
-    resource: balances
+    resource: volumes
     body:
       $match:
         address: "platform:revenue:advanceFees"

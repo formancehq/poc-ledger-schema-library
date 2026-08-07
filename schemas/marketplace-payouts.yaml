@@ -53,8 +53,8 @@ transactions:
     description: >-
       Buyer card payment captured at the PSP; gross splits into commission, PSP
       fee, and held seller share
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $psp_id
         account $order_id
@@ -79,8 +79,8 @@ transactions:
       set_tx_meta("seller_id", $seller_id)
   PSP_SETTLEMENT:
     description: Daily PSP cash sweep to the platform bank; PSP retains its fees
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $psp_id
         account $bank_id
@@ -103,8 +103,8 @@ transactions:
       set_tx_meta("settlement_ref", $settlement_ref)
   SELLER_FUNDS_RELEASE:
     description: Delivery confirmed; held order funds released to the seller payable
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $order_id
         account $seller_id
@@ -120,8 +120,8 @@ transactions:
       set_tx_meta("order_id", $order_ref)
   SELLER_PAYOUT_INITIATE:
     description: Weekly payout run reserves the seller's payable into an in-flight payout
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $seller_id
         monetary $amount
@@ -137,8 +137,8 @@ transactions:
       set_tx_meta("payout_ref", $payout_ref)
   SELLER_PAYOUT_SETTLE:
     description: Weekly payout bank transfer confirmed; in-flight payout discharged
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $seller_id
         account $bank_id
@@ -155,8 +155,8 @@ transactions:
       set_tx_meta("payout_ref", $payout_ref)
   SELLER_PAYOUT_RETURN:
     description: Reserved payout failed; in-flight amount returned to the seller payable
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $seller_id
         monetary $amount
@@ -175,8 +175,8 @@ transactions:
     description: >-
       Refund a past order to the buyer; clawed back from seller, commission, and
       platform-absorbed PSP fee
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $psp_id
         account $seller_id
@@ -204,8 +204,8 @@ transactions:
     description: >-
       Buyer chargeback; charged against the seller balance with the platform
       absorbing any shortfall
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $psp_id
         account $seller_id
@@ -230,8 +230,8 @@ transactions:
     description: >-
       Cross the seller payable to the payout currency at the treasury rate, into
       the in-flight payout
-    interpreter: experimental
-    script: >-
+    script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $seller_id
         account $conversion_id
@@ -282,8 +282,8 @@ transactions:
     description: >-
       Book a ledger-vs-statement reconciliation difference into suspense pending
       investigation
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $psp_id
         monetary $amount
@@ -305,11 +305,11 @@ queries:
       in-flight payout. Returns one row per (account, asset).
     resource: accounts
     vars:
-      SELLER_ID:
+      seller_id:
         type: string
     body:
       $match:
-        address: 'sellers:${SELLER_ID}:'
+        address: 'sellers:${seller_id}:'
   held_versus_available_for_one_seller:
     name: held_versus_available_for_one_seller
     description: >-
@@ -317,11 +317,11 @@ queries:
       is keyed by order, not seller).
     resource: accounts
     vars:
-      SELLER_ID:
+      seller_id:
         type: string
     body:
       $match:
-        address: sellers:${SELLER_ID}:payable
+        address: sellers:${seller_id}:payable
   sellers_with_a_negative_balance:
     name: sellers_with_a_negative_balance
     description: >-
@@ -388,18 +388,18 @@ queries:
       for one order, read as volume into each leg over the order's window.
     resource: volumes
     vars:
-      PSP_ID:
+      psp_id:
         type: string
-      ORDER_ID:
+      order_id:
         type: string
     body:
       $or:
         - $match:
             address: platform:revenue:commission
         - $match:
-            address: counterparties:psp:${PSP_ID}:feesPayable
+            address: counterparties:psp:${psp_id}:feesPayable
         - $match:
-            address: escrow:orders:${ORDER_ID}:held
+            address: escrow:orders:${order_id}:held
   revenue_earned_over_a_period:
     name: revenue_earned_over_a_period
     description: >-
@@ -416,11 +416,11 @@ queries:
       of the seller's in-flight payout into the payout bank.
     resource: volumes
     vars:
-      SELLER_ID:
+      seller_id:
         type: string
     body:
       $match:
-        address: sellers:${SELLER_ID}:payout:pending
+        address: sellers:${seller_id}:payout:pending
   psp_net_position:
     name: psp_net_position
     description: >-
@@ -428,11 +428,11 @@ queries:
       (running negative) and the fees payable (running positive).
     resource: accounts
     vars:
-      PSP_ID:
+      psp_id:
         type: string
     body:
       $match:
-        address: 'counterparties:psp:${PSP_ID}:'
+        address: 'counterparties:psp:${psp_id}:'
   psp_settlement_reconciliation:
     name: psp_settlement_reconciliation
     description: >-
@@ -441,11 +441,11 @@ queries:
       balance.
     resource: accounts
     vars:
-      PSP_ID:
+      psp_id:
         type: string
     body:
       $match:
-        address: counterparties:psp:${PSP_ID}:settlement
+        address: counterparties:psp:${psp_id}:settlement
   payout_bank_file_reconciliation:
     name: payout_bank_file_reconciliation
     description: >-
@@ -490,8 +490,8 @@ queries:
       release, refund, chargeback.
     resource: transactions
     vars:
-      ORDER_ID:
+      order_id:
         type: string
     body:
       $match:
-        metadata[order_id]: '${ORDER_ID}'
+        metadata[order_id]: '${order_id}'

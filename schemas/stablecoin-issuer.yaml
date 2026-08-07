@@ -13,45 +13,45 @@ meta:
 chart:
   platform:
     banks:
-      $bankId:
+      $bank_id:
         reserve: {}
         yield:
           accrued: {}
     mints:
-      $mintId:
+      $mint_id:
         inTransit: {}
     redemptions:
-      $redemptionId:
+      $redemption_id:
         settling: {}
         payable: {}
     reserves:
       rebalance:
-        $rebalanceId:
+        $rebalance_id:
           inTransit: {}
     fees:
       redemption: {}
     revenue:
       yield: {}
   holders:
-    $holderId: {}
+    $holder_id: {}
     .self: {}
   counterparties:
     banks:
-      $bankId: {}
+      $bank_id: {}
   external:
     fiat:
       wires: {}
       payouts: {}
     networks:
-      $networkId:
+      $network_id:
         supply: {}
 transactions:
   MINT_INITIATE:
     description: >-
       Holder fiat wire acknowledged for a mint; cash recorded in transit, no
       token credited yet
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $mint_id
         monetary $fiat_amount
@@ -70,8 +70,8 @@ transactions:
     description: >-
       Reserve bank confirms settlement; in-transit fiat becomes reserve and
       token is minted to the holder
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $bank_id
         account $mint_id
@@ -99,8 +99,8 @@ transactions:
     description: >-
       Mint wire reversed before settlement; in-transit fiat returned, no token
       minted
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $mint_id
         monetary $fiat_amount
@@ -120,8 +120,8 @@ transactions:
     description: >-
       Instant peer-to-peer token transfer between two holders, no reserve
       movement
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $from_holder_id
         account $to_holder_id
@@ -138,8 +138,8 @@ transactions:
       set_tx_meta("transfer_ref", $transfer_ref)
   TRANSFER_REVERSE:
     description: Reversal of a prior token transfer, tokens returned to the original sender
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $from_holder_id
         account $to_holder_id
@@ -159,8 +159,8 @@ transactions:
     description: >-
       Holder burns token for redemption; fiat payout obligation and 10 bps fee
       booked, reserve untouched until settlement
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $holder_id
         account $network_id
@@ -191,8 +191,8 @@ transactions:
     description: >-
       Reserve bank settles the redemption payout; reserve drains, net fiat
       leaves to the holder
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $bank_id
         account $redemption_id
@@ -218,8 +218,8 @@ transactions:
     description: >-
       Settled redemption payout returned; redemption cancelled, reserve and
       token restored to the holder
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $bank_id
         account $holder_id
@@ -254,8 +254,8 @@ transactions:
     description: >-
       Reserve cash sent from one reserve bank toward the other; held in transit
       until it settles
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $from_bank_id
         account $rebalance_id
@@ -273,8 +273,8 @@ transactions:
       set_tx_meta("rebalance_ref", $rebalance_ref)
   REBALANCE_SETTLE:
     description: Interbank reserve transfer settles into the destination bank's reserve
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $to_bank_id
         account $rebalance_id
@@ -292,8 +292,8 @@ transactions:
       set_tx_meta("rebalance_ref", $rebalance_ref)
   REBALANCE_RETURN:
     description: Failed interbank reserve transfer returned to the origin bank's reserve
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $from_bank_id
         account $rebalance_id
@@ -314,8 +314,8 @@ transactions:
     description: >-
       Reserve bank credits interest on reserves into a segregated yield-accrued
       sub-account
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $bank_id
         monetary $yield_amount
@@ -331,8 +331,8 @@ transactions:
       set_tx_meta("accrual_period", $accrual_period)
   YIELD_SWEEP:
     description: Monthly sweep of accrued reserve yield into operational revenue
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $bank_id
         monetary $yield_amount
@@ -402,11 +402,11 @@ queries:
       id. The whole-fleet rollup uses external:networks::supply.
     resource: accounts
     vars:
-      networkId:
+      network_id:
         type: string
     body:
       $match:
-        address: external:networks:${networkId}:supply
+        address: external:networks:${network_id}:supply
   total_settled_reserve:
     description: >-
       Sums the settled reserve across both reserve banks. This is the
