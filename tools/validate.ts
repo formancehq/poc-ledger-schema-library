@@ -90,6 +90,33 @@ for (const file of files) {
     }
   }
 
+  // Numscript identifier casing. Verified against the playground parser
+  // (2026-08-07): `$sellerId` fails with "extraneous input 'I'" and
+  // `$SELLER_ID` with "token recognition error at '$S'", because the lexer
+  // splits identifiers on capitals — so a non-snake_case variable can never
+  // execute, however valid the YAML looks. Account PATH segments are literals,
+  // not identifiers, and are deliberately left alone (`@platform:revenue:fxSpread`
+  // parses fine).
+  const SNAKE = /^[a-z][a-z0-9_]*$/;
+  const identifiers = new Set<string>();
+  for (const m of raw.matchAll(/\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g)) {
+    identifiers.add(m[1]!);
+  }
+  for (const query of Object.values(
+    (data as { queries?: Record<string, { vars?: Record<string, unknown> }> })
+      .queries ?? {}
+  )) {
+    for (const varName of Object.keys(query?.vars ?? {})) identifiers.add(varName);
+  }
+  for (const name of identifiers) {
+    if (!SNAKE.test(name)) {
+      console.error(
+        `✗ ${file}: identifier "$${name}" is not snake_case; the Numscript lexer splits identifiers on capitals, so this cannot execute`
+      );
+      failures++;
+    }
+  }
+
   if (!validate(data)) {
     console.error(`✗ ${file}: schema validation failed`);
     for (const e of validate.errors ?? []) console.error(`    ${e.instancePath || "/"} ${e.message}`);

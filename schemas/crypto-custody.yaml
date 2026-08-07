@@ -12,7 +12,7 @@ meta:
   demoUrl: "https://formance-demo-portal.vercel.app/d/studio-crypto-custody"
 chart:
   customers:
-    $customerId:
+    $customer_id:
       .pattern: ^[a-zA-Z0-9_-]+$
       cash:
         pending: {}
@@ -21,13 +21,13 @@ chart:
         confirming: {}
         available: {}
       withdrawals:
-        $withdrawalId:
+        $withdrawal_id:
           .pattern: ^[a-zA-Z0-9_-]+$
           pending: {}
       .self: {}
   fbo:
     bank:
-      $bankId:
+      $bank_id:
         .pattern: ^[a-zA-Z0-9_-]+$
         settled: {}
         inTransit: {}
@@ -55,7 +55,7 @@ chart:
     otcDesk: {}
   exchanges:
     conv:
-      $conversionId:
+      $conversion_id:
         .pattern: ^[a-zA-Z0-9_-]+$
       .self: {}
   external:

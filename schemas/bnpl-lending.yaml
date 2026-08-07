@@ -12,11 +12,11 @@ meta:
   demoUrl: "https://formance-demo-portal.vercel.app/d/studio-bnpl-lending"
 chart:
   borrowers:
-    $borrowerId:
+    $borrower_id:
       .pattern: ^[a-zA-Z0-9_-]+$
       .self: {}
       plans:
-        $planId:
+        $plan_id:
           .pattern: ^[a-zA-Z0-9_-]+$
           .self: {}
           installments:
@@ -36,17 +36,17 @@ chart:
                 paid: {}
   counterparties:
     merchants:
-      $merchantId:
+      $merchant_id:
         .pattern: ^[a-zA-Z0-9_-]+$
         payable: {}
     psp:
-      $pspId:
+      $psp_id:
         .pattern: ^[a-zA-Z0-9_-]+$
         collections:
           pending: {}
   platform:
     banks:
-      $bankId:
+      $bank_id:
         .pattern: ^[a-zA-Z0-9_-]+$
         operating: {}
     revenue:
@@ -373,14 +373,14 @@ queries:
       on demand during servicing.
     resource: accounts
     vars:
-      borrowerId:
+      borrower_id:
         type: string
-      planId:
+      plan_id:
         type: string
     body:
       $match:
         address: >-
-          borrowers:${borrowerId}:plans:${planId}:installments::principal:outstanding
+          borrowers:${borrower_id}:plans:${plan_id}:installments::principal:outstanding
   full_schedule_for_one_plan:
     name: full_schedule_for_one_plan
     description: >-
@@ -389,13 +389,13 @@ queries:
       picture in one read.
     resource: accounts
     vars:
-      borrowerId:
+      borrower_id:
         type: string
-      planId:
+      plan_id:
         type: string
     body:
       $match:
-        address: 'borrowers:${borrowerId}:plans:${planId}:'
+        address: 'borrowers:${borrower_id}:plans:${plan_id}:'
   everything_for_one_shopper:
     name: everything_for_one_shopper
     description: >-
@@ -403,11 +403,11 @@ queries:
       plans and installments.
     resource: accounts
     vars:
-      borrowerId:
+      borrower_id:
         type: string
     body:
       $match:
-        address: 'borrowers:${borrowerId}:'
+        address: 'borrowers:${borrower_id}:'
   total_outstanding_principal:
     name: total_outstanding_principal
     description: >-
@@ -444,14 +444,14 @@ queries:
       on that plan, already net of any recovery posted back against it.
     resource: accounts
     vars:
-      borrowerId:
+      borrower_id:
         type: string
-      planId:
+      plan_id:
         type: string
     body:
       $match:
         address: >-
-          borrowers:${borrowerId}:plans:${planId}:installments::principal:writtenOff
+          borrowers:${borrower_id}:plans:${plan_id}:installments::principal:writtenOff
   total_charged_off_principal_net_of_recoveries:
     name: total_charged_off_principal_net_of_recoveries
     description: >-
@@ -469,11 +469,11 @@ queries:
       the next weekly ACH settlement will drain to zero.
     resource: accounts
     vars:
-      merchantId:
+      merchant_id:
         type: string
     body:
       $match:
-        address: counterparties:merchants:${merchantId}:payable
+        address: counterparties:merchants:${merchant_id}:payable
   psp_collection_float:
     name: psp_collection_float
     description: >-
@@ -481,11 +481,11 @@ queries:
       collected from shoppers and not yet remitted to the operating bank.
     resource: accounts
     vars:
-      pspId:
+      psp_id:
         type: string
     body:
       $match:
-        address: counterparties:psp:${pspId}:collections:pending
+        address: counterparties:psp:${psp_id}:collections:pending
   operating_bank_cash_position:
     name: operating_bank_cash_position
     description: >-
@@ -493,11 +493,11 @@ queries:
       platform holds at the partner bank.
     resource: accounts
     vars:
-      bankId:
+      bank_id:
         type: string
     body:
       $match:
-        address: platform:banks:${bankId}:operating
+        address: platform:banks:${bank_id}:operating
   total_merchant_payable:
     name: total_merchant_payable
     description: >-
@@ -572,11 +572,11 @@ queries:
       startTime=2026-06-22T00:00:00Z&endTime=2026-06-23T00:00:00Z.
     resource: volumes
     vars:
-      pspId:
+      psp_id:
         type: string
     body:
       $match:
-        address: counterparties:psp:${pspId}:collections:pending
+        address: counterparties:psp:${psp_id}:collections:pending
   merchant_settlement_outflow_today:
     name: merchant_settlement_outflow_today
     description: >-

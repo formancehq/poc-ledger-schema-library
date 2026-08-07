@@ -19,7 +19,7 @@ This is an illustrative example. Adapt the schema to your specific business requ
 
 ## Key Concepts
 
-- **Multi-Asset Entitlements** — Each customer holds balances across several assets (USD, BTC, ETH, multiple USDC variants) under a single `customers:$customerId` namespace. Cash and crypto live in separate sub-trees, each split between funds that are spendable and funds still in flight.
+- **Multi-Asset Entitlements** — Each customer holds balances across several assets (USD, BTC, ETH, multiple USDC variants) under a single `customers:$customer_id` namespace. Cash and crypto live in separate sub-trees, each split between funds that are spendable and funds still in flight.
 - **Omnibus Custody vs. Per-Customer Entitlements** — Customer crypto balances are *entitlements*: a record of what the platform owes each customer. The actual coins sit pooled in `platform:custody` accounts — per-network hot wallets and per-custodian omnibus wallets — shared across all customers. The chart deliberately separates the two so a customer's spendable balance is never confused with where the asset physically lives.
 - **On-Chain Reconciliation** — Because entitlements and custody are tracked separately, the platform can continuously reconcile the sum of customer crypto entitlements against the sum of hot-wallet and omnibus backing, per asset. A divergence means an unbooked deposit, an untracked withdrawal, or a custody discrepancy.
 - **Deposit & Withdrawal Confirmation Latency** — On-chain deposits are credited as `confirming` the moment they are observed, then promoted to `available` once they reach confirmation depth. Fiat deposits move through a `pending` cash window while the ACH or wire clears. Withdrawals are reserved into per-withdrawal accounts before they settle to chain.
@@ -41,7 +41,7 @@ The `chart` section defines the customer-facing entitlements, the platform-side 
 
 <LedgerSchema schema="crypto-custody" chart="customers" />
 
-**Normal credit accounts** — they represent the platform's liabilities to customers. Each customer namespace carries a `cash` sub-tree (`pending` while a fiat deposit clears, `available` once spendable) and a `crypto` sub-tree (`confirming` while an on-chain deposit awaits confirmation depth, `available` once spendable). The `withdrawals:$withdrawalId:pending` accounts isolate each outbound crypto withdrawal as its own reserve, so reserved funds can't be spent twice and each withdrawal's lifecycle is tracked independently.
+**Normal credit accounts** — they represent the platform's liabilities to customers. Each customer namespace carries a `cash` sub-tree (`pending` while a fiat deposit clears, `available` once spendable) and a `crypto` sub-tree (`confirming` while an on-chain deposit awaits confirmation depth, `available` once spendable). The `withdrawals:$withdrawal_id:pending` accounts isolate each outbound crypto withdrawal as its own reserve, so reserved funds can't be spent twice and each withdrawal's lifecycle is tracked independently.
 
 ### FBO
 
@@ -65,7 +65,7 @@ The `otcDesk` account represents the OTC desk that fills buy and sell orders —
 
 <LedgerSchema schema="crypto-custody" chart="exchanges" />
 
-Per-trade conversion accounts under `conv:$conversionId` hold the in-progress legs of a buy or sell while the OTC desk settles. Account metadata records the trade side, the customer, and the trade status. A non-zero balance after settlement is a stranded leg that needs a compensating entry.
+Per-trade conversion accounts under `conv:$conversion_id` hold the in-progress legs of a buy or sell while the OTC desk settles. Account metadata records the trade side, the customer, and the trade status. A non-zero balance after settlement is a stranded leg that needs a compensating entry.
 
 ### External
 

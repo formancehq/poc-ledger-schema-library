@@ -13,37 +13,37 @@ meta:
 chart:
   platform:
     banks:
-      $bankId:
+      $bank_id:
         reserve: {}
         yield:
           accrued: {}
     mints:
-      $mintId:
+      $mint_id:
         inTransit: {}
     redemptions:
-      $redemptionId:
+      $redemption_id:
         settling: {}
         payable: {}
     reserves:
       rebalance:
-        $rebalanceId:
+        $rebalance_id:
           inTransit: {}
     fees:
       redemption: {}
     revenue:
       yield: {}
   holders:
-    $holderId: {}
+    $holder_id: {}
     .self: {}
   counterparties:
     banks:
-      $bankId: {}
+      $bank_id: {}
   external:
     fiat:
       wires: {}
       payouts: {}
     networks:
-      $networkId:
+      $network_id:
         supply: {}
 transactions:
   MINT_INITIATE:
@@ -402,11 +402,11 @@ queries:
       id. The whole-fleet rollup uses external:networks::supply.
     resource: accounts
     vars:
-      networkId:
+      network_id:
         type: string
     body:
       $match:
-        address: external:networks:${networkId}:supply
+        address: external:networks:${network_id}:supply
   total_settled_reserve:
     description: >-
       Sums the settled reserve across both reserve banks. This is the

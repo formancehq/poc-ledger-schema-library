@@ -236,19 +236,23 @@ queries:
         address: "borrowers:${borrower_id}:loans:${loan_id}:"
   BOOK_OUTSTANDING:
     description: Total principal outstanding across the book (negative = receivable)
-    resource: balances
+    resource: volumes
+    params:
+      groupBy: 1
     body:
       $match:
         address: "borrowers::loans::principal:outstanding"
   INTEREST_INCOME:
     description: Interest revenue recognized to date
-    resource: balances
+    resource: volumes
     body:
       $match:
         address: "platform:revenue:interest"
   FEES_OUTSTANDING:
     description: Late fees still owed across the book (negative = receivable)
-    resource: balances
+    resource: volumes
+    params:
+      groupBy: 1
     body:
       $match:
         address: "borrowers::loans::fees:receivable"

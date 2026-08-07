@@ -225,7 +225,7 @@ queries:
         address: "platform:escrow:orders::held"
   COMMISSION_EARNED:
     description: Platform commission earned to date
-    resource: balances
+    resource: volumes
     body:
       $match:
         address: "platform:revenue:commission"

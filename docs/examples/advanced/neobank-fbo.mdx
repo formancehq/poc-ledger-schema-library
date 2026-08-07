@@ -41,7 +41,7 @@ The `chart` section defines two top-level groups: `customers` (the per-customer 
 
 <LedgerSchema schema="neobank-fbo" chart="customers" />
 
-**Normal credit accounts** — these represent your liabilities to customers. Each `$customerId` has an `available` balance (spendable funds), a `holds` subtree (one account per card authorization, by `$authId`), a `withdrawals` subtree (one `pending` account per outbound ACH, by `$withdrawalId`), and an `advances` subtree (one `outstanding` receivable per advance, by `$advanceId`). The advance `outstanding` accounts run negative while open — they are receivables the platform fronts — and drain to zero when the expected deposit settles.
+**Normal credit accounts** — these represent your liabilities to customers. Each `$customer_id` has an `available` balance (spendable funds), a `holds` subtree (one account per card authorization, by `$auth_id`), a `withdrawals` subtree (one `pending` account per outbound ACH, by `$withdrawal_id`), and an `advances` subtree (one `outstanding` receivable per advance, by `$advance_id`). The advance `outstanding` accounts run negative while open — they are receivables the platform fronts — and drain to zero when the expected deposit settles.
 
 ### Platform
 
@@ -77,7 +77,7 @@ Card spend follows the authorization-then-capture lifecycle. An authorization pl
 
 <DocSteps>
 <DocStep title="Authorization">
-`CARD_AUTH` places a hold on the customer's available balance, moving funds into a per-authorization `holds:$authId` account.
+`CARD_AUTH` places a hold on the customer's available balance, moving funds into a per-authorization `holds:$auth_id` account.
 
 <LedgerSchema schema="neobank-fbo" tx="CARD_AUTH" />
 </DocStep>
@@ -114,7 +114,7 @@ Outbound ACH withdrawals are a two-step process so that funds being withdrawn ca
 
 <DocSteps>
 <DocStep title="Reserve">
-`ACH_WITHDRAWAL_RESERVE` earmarks funds from the customer's available balance into a per-withdrawal `withdrawals:$withdrawalId:pending` account.
+`ACH_WITHDRAWAL_RESERVE` earmarks funds from the customer's available balance into a per-withdrawal `withdrawals:$withdrawal_id:pending` account.
 
 <LedgerSchema schema="neobank-fbo" tx="ACH_WITHDRAWAL_RESERVE" />
 </DocStep>
@@ -131,7 +131,7 @@ If the outbound ACH fails or is returned, `ACH_WITHDRAWAL_RETURN` restores the p
 
 ## Advance Flow
 
-Early-access advances let the platform front money against an expected deposit, booked as a receivable on a per-advance `advances:$advanceId:outstanding` account.
+Early-access advances let the platform front money against an expected deposit, booked as a receivable on a per-advance `advances:$advance_id:outstanding` account.
 
 <DocSteps>
 <DocStep title="Origination">

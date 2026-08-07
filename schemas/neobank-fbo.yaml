@@ -12,18 +12,18 @@ meta:
   demoUrl: "https://formance-demo-portal.vercel.app/d/studio-neobank-fbo"
 chart:
   customers:
-    $customerId:
+    $customer_id:
       .pattern: ^[a-zA-Z0-9_-]+$
       available: {}
       holds:
-        $authId:
+        $auth_id:
           .pattern: ^[a-zA-Z0-9_-]+$
       withdrawals:
-        $withdrawalId:
+        $withdrawal_id:
           .pattern: ^[a-zA-Z0-9_-]+$
           pending: {}
       advances:
-        $advanceId:
+        $advance_id:
           .pattern: ^[a-zA-Z0-9_-]+$
           outstanding: {}
       .self: {}
@@ -438,11 +438,11 @@ queries:
       balance read.
     resource: accounts
     vars:
-      customerId:
+      customer_id:
         type: string
     body:
       $match:
-        address: customers:${customerId}:available
+        address: customers:${customer_id}:available
   customer_total_holds:
     name: Customer total holds
     description: >-
@@ -451,11 +451,11 @@ queries:
       customer's gross balance.
     resource: accounts
     vars:
-      customerId:
+      customer_id:
         type: string
     body:
       $match:
-        address: 'customers:${customerId}:holds:'
+        address: 'customers:${customer_id}:holds:'
   customer_full_position:
     name: Customer full position
     description: >-
@@ -464,11 +464,11 @@ queries:
       (account, asset, balance) triple.
     resource: accounts
     vars:
-      customerId:
+      customer_id:
         type: string
     body:
       $match:
-        address: 'customers:${customerId}:'
+        address: 'customers:${customer_id}:'
   total_customer_spendable_and_held_liability:
     name: Total customer spendable and held liability
     description: >-
@@ -593,11 +593,11 @@ queries:
       balance questions.
     resource: transactions
     vars:
-      customerId:
+      customer_id:
         type: string
     body:
       $match:
-        account: 'customers:${customerId}:'
+        account: 'customers:${customer_id}:'
   authorization_lifecycle_audit:
     name: Authorization lifecycle audit
     description: >-
@@ -605,10 +605,10 @@ queries:
       expire), identified by the per-hold account.
     resource: transactions
     vars:
-      customerId:
+      customer_id:
         type: string
-      authId:
+      auth_id:
         type: string
     body:
       $match:
-        account: 'customers:${customerId}:holds:${authId}'
+        account: 'customers:${customer_id}:holds:${auth_id}'
