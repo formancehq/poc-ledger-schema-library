@@ -68,8 +68,8 @@ chart:
 transactions:
   FIAT_DEPOSIT_INITIATE:
     description: Customer USD arrives by ACH or wire and is credited as pending
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         account $bank_id
@@ -86,8 +86,8 @@ transactions:
       set_tx_meta("deposit_id", $deposit_id)
   FIAT_DEPOSIT_SETTLE:
     description: ACH or wire clears at the FBO bank; pending cash becomes available
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         account $bank_id
@@ -109,8 +109,8 @@ transactions:
       set_tx_meta("deposit_id", $deposit_id)
   FIAT_WITHDRAWAL_INITIATE:
     description: Reserve customer USD for an outbound ACH or wire
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         account $bank_id
@@ -127,8 +127,8 @@ transactions:
       set_tx_meta("withdrawal_id", $withdrawal_id)
   FIAT_WITHDRAWAL_SETTLE:
     description: Outbound ACH or wire clears the FBO bank
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $bank_id
         monetary $amount
@@ -144,8 +144,8 @@ transactions:
       set_tx_meta("withdrawal_id", $withdrawal_id)
   FIAT_WITHDRAWAL_RETURN:
     description: Outbound ACH or wire is returned; reserved cash goes back to available
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         account $bank_id
@@ -165,8 +165,8 @@ transactions:
       set_tx_meta("adjusted_posting_event_id", $original_posting_id)
   CRYPTO_DEPOSIT_DETECTED:
     description: On-chain deposit observed but not yet confirmed; credited as confirming
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         account $custodian
@@ -183,8 +183,8 @@ transactions:
       set_tx_meta("deposit_id", $deposit_id)
   CRYPTO_DEPOSIT_CONFIRMED:
     description: On-chain deposit reaches confirmation depth; confirming becomes available
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         monetary $amount
@@ -200,8 +200,8 @@ transactions:
       set_tx_meta("deposit_id", $deposit_id)
   BUY_TRADE_INITIATE:
     description: Lock customer USD (gross of spread) into a per-trade conversion account
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         account $conversion_id
@@ -220,8 +220,8 @@ transactions:
       set_tx_meta("conversion_id", $conversion_id)
   BUY_TRADE_SETTLE:
     description: OTC desk delivers crypto; spread booked; customer credited
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         account $conversion_id
@@ -259,8 +259,8 @@ transactions:
       set_tx_meta("conversion_id", $conversion_id)
   SELL_TRADE_INITIATE:
     description: Lock customer crypto into a per-trade conversion account
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         account $conversion_id
@@ -279,8 +279,8 @@ transactions:
       set_tx_meta("conversion_id", $conversion_id)
   SELL_TRADE_SETTLE:
     description: OTC desk delivers USD; spread booked; customer credited
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         account $conversion_id
@@ -318,8 +318,8 @@ transactions:
       set_tx_meta("conversion_id", $conversion_id)
   CRYPTO_WITHDRAWAL_INITIATE:
     description: Reserve customer crypto for an outbound on-chain withdrawal
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         account $withdrawal_id
@@ -335,8 +335,8 @@ transactions:
       set_tx_meta("withdrawal_id", $withdrawal_id)
   CRYPTO_WITHDRAWAL_SETTLE:
     description: Burn customer crypto from the hot wallet to chain; absorb network fee
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         account $withdrawal_id
@@ -359,8 +359,8 @@ transactions:
       set_tx_meta("withdrawal_id", $withdrawal_id)
   CRYPTO_WITHDRAWAL_CANCEL:
     description: Release a reserved crypto withdrawal back to available
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $customer_id
         account $withdrawal_id
@@ -379,8 +379,8 @@ transactions:
       set_tx_meta("adjusted_posting_event_id", $original_posting_id)
   CUSTODIAN_REFILL:
     description: Move crypto from a custodian to the hot wallet on the same network
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $custodian
         account $network
@@ -397,8 +397,8 @@ transactions:
       set_tx_meta("refill_id", $refill_id)
   CONVERSION_COMPENSATE:
     description: Reverse a stranded conversion leg back to the customer
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $conversion_id
         account $return_account

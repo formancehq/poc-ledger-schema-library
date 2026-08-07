@@ -61,8 +61,8 @@ transactions:
       Originate a financed purchase: book per-installment principal receivables,
       accrue the merchant payable net of the merchant discount fee, retain the
       discount fee as revenue.
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $borrower_id
         string $plan_id
@@ -95,8 +95,8 @@ transactions:
       Accrue interest on one installment to the receivable and the
       earned-not-collected memo; recognize no revenue (earned-on-collection
       model).
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $borrower_id
         string $plan_id
@@ -116,8 +116,8 @@ transactions:
     description: >-
       Assess a late fee on one installment to the receivable and the
       earned-not-collected memo; recognize no revenue until collected.
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $borrower_id
         string $plan_id
@@ -138,8 +138,8 @@ transactions:
       Collect an installment via PSP card autopay; apply fee-interest-principal
       waterfall; recognize collected interest and fees as revenue
       (earned-on-collection).
-    interpreter: experimental
     script: |-
+      #![feature("experimental-overdraft-function", "experimental-account-interpolation")]
       vars {
         account $borrower_id
         string $plan_id
@@ -192,8 +192,8 @@ transactions:
       Reverse a returned or charged-back installment collection; restore
       receivables, remove PSP-float cash, reverse recognized interest and fee
       revenue.
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $borrower_id
         string $plan_id
@@ -248,8 +248,8 @@ transactions:
     description: >-
       PSP settles collected card payments into the operating bank; clear the PSP
       collection float, grow the operating-bank backing.
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $psp_id
         account $bank_id
@@ -268,8 +268,8 @@ transactions:
     description: >-
       Settle a merchant's accrued payable weekly by ACH from the operating bank;
       drain the payable to zero.
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $merchant_id
         account $bank_id
@@ -289,8 +289,8 @@ transactions:
     description: >-
       Reverse a returned merchant ACH payout; restore the merchant payable and
       reverse the operating-bank movement.
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $merchant_id
         account $bank_id
@@ -313,8 +313,8 @@ transactions:
       Charge off a 90-DPD installment: reclassify outstanding principal to
       written-off; cancel never-collected interest and fee receivables against
       their memos with no P&L impact.
-    interpreter: experimental
     script: |-
+      #![feature("experimental-overdraft-function", "experimental-account-interpolation")]
       vars {
         account $borrower_id
         string $plan_id
@@ -346,8 +346,8 @@ transactions:
     description: >-
       Record a partial recovery on a written-off installment; recovery cash via
       PSP float reduces the charged-off balance toward zero.
-    interpreter: experimental
     script: |-
+      #![feature("experimental-account-interpolation")]
       vars {
         account $borrower_id
         string $plan_id

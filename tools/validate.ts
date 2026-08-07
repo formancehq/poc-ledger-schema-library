@@ -117,6 +117,57 @@ for (const file of files) {
     }
   }
 
+  // Numscript feature pragmas, verified against the playground parser
+  // (2026-08-07). Three ways this goes wrong silently:
+  //
+  //   - two stacked `#![feature(...)]` lines are a PARSE error ("mismatched
+  //     input '#!'"); multiple features must be comma-separated inside one
+  //     pragma;
+  //   - a script that interpolates a variable into an account path without
+  //     `experimental-account-interpolation` parses but refuses to run;
+  //   - same for `overdraft()` without `experimental-overdraft-function`.
+  //
+  // `interpreter:` is NOT a field the ledger reads (V2TransactionTemplate
+  // declares description / runtime / script only, with no
+  // additionalProperties:false), so it validated cleanly while declaring
+  // nothing at all. It is banned outright.
+  const FEATURE_TRIGGERS: Array<[string, RegExp]> = [
+    ["experimental-account-interpolation", /@[A-Za-z0-9_:*-]*\$[A-Za-z_]/],
+    ["experimental-overdraft-function", /\boverdraft\s*\(/],
+    ["experimental-get-asset-function", /\bget_asset\s*\(/],
+    ["experimental-get-amount-function", /\bget_amount\s*\(/],
+  ];
+  const transactions = (data as {
+    transactions?: Record<string, { script?: string; interpreter?: unknown }>;
+  }).transactions ?? {};
+  for (const [txName, tx] of Object.entries(transactions)) {
+    if (tx?.interpreter !== undefined) {
+      console.error(
+        `✗ ${file}: transactions.${txName} sets \`interpreter\`, which the ledger ignores; declare features with a #![feature(...)] pragma instead`
+      );
+      failures++;
+    }
+    const script = tx?.script ?? "";
+    const pragmaLines = script
+      .split("\n")
+      .filter((l) => l.trim().startsWith("#!["));
+    if (pragmaLines.length > 1) {
+      console.error(
+        `✗ ${file}: transactions.${txName} has ${pragmaLines.length} pragma lines; Numscript accepts one, with features comma-separated inside it`
+      );
+      failures++;
+    }
+    const declared = pragmaLines.join(" ");
+    for (const [feature, trigger] of FEATURE_TRIGGERS) {
+      if (trigger.test(script) && !declared.includes(feature)) {
+        console.error(
+          `✗ ${file}: transactions.${txName} needs the "${feature}" feature but does not declare it, so it cannot execute`
+        );
+        failures++;
+      }
+    }
+  }
+
   if (!validate(data)) {
     console.error(`✗ ${file}: schema validation failed`);
     for (const e of validate.errors ?? []) console.error(`    ${e.instancePath || "/"} ${e.message}`);
