@@ -485,39 +485,36 @@ queries:
       return. A non-zero balance is a mint that is wired but neither settled nor
       returned; cross-reference the transaction timestamp against the expected
       settlement window.
+      Lists every in-transit mint account; read the balances from the response and
+      treat non-zero ones as aging. Not filtered server-side: a balance filter needs
+      one literal asset and this flow is asset-agnostic.
     resource: accounts
     body:
-      $and:
-        - $match:
-            address: platform:mints::inTransit
-        - $not:
-            $match:
-              balance: 0
+      $match:
+        address: platform:mints::inTransit
   aging_redemptions_settling:
     description: >-
       Per-redemption settling accounts with an outstanding balance: token burned
       but fiat payout not yet settled. Non-zero is the in-transit redemption
       population.
+      Lists every settling redemption account; non-zero balances in the response are
+      the ones still owed out. Not filtered server-side: a balance filter needs one
+      literal asset.
     resource: accounts
     body:
-      $and:
-        - $match:
-            address: platform:redemptions::settling
-        - $not:
-            $match:
-              balance: 0
+      $match:
+        address: platform:redemptions::settling
   aging_rebalances_in_transit:
     description: >-
       Per-rebalance in-transit accounts that have not settled or returned.
       Non-zero past the expected interbank window is a stuck rebalance.
+      Lists every in-transit rebalance account; non-zero balances are legs that left
+      one bank and have not arrived at the other. Not filtered server-side: a
+      balance filter needs one literal asset.
     resource: accounts
     body:
-      $and:
-        - $match:
-            address: platform:reserves:rebalance::inTransit
-        - $not:
-            $match:
-              balance: 0
+      $match:
+        address: platform:reserves:rebalance::inTransit
   all_transactions_touching_one_holder:
     description: >-
       Every posting that hit a holder, in either direction, for drill-down.
