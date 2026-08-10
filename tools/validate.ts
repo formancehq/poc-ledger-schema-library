@@ -131,7 +131,18 @@ for (const file of files) {
   // does not model filter-body types: the schema pushed fine and failed at
   // v2InsertSchema mid-deploy. Hence a dedicated gate.
   const MAP_FIELDS = new Set(["balance", "metadata", "volumes"]);
-  const COMPARISONS = new Set(["$match", "$gt", "$gte", "$lt", "$lte"]);
+  // $like and $in measured (2026-08-10): rejected on bare map fields exactly
+// like $match, keyed forms accepted. $exists deliberately EXCLUDED: the bare
+// map field is the key-existence idiom and is accepted by the ledger.
+const COMPARISONS = new Set([
+  "$match",
+  "$gt",
+  "$gte",
+  "$lt",
+  "$lte",
+  "$like",
+  "$in",
+]);
   const walkFilter = (node: unknown, queryName: string): void => {
     if (Array.isArray(node)) {
       for (const item of node) walkFilter(item, queryName);
