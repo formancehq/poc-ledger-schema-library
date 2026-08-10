@@ -130,7 +130,11 @@ for (const file of files) {
   // This escaped to a production deployment because the manifest JSON Schema
   // does not model filter-body types: the schema pushed fine and failed at
   // v2InsertSchema mid-deploy. Hence a dedicated gate.
-  const MAP_FIELDS = new Set(["balance", "metadata", "volumes"]);
+  const MAP_FIELDS = new Set(["balance", "metadata"]);
+  // Only balance is INT-valued; metadata is map[string]string where a numeric
+  // string like "0" is legal (measured). volumes is not a filter field at all
+  // (rejected as `unknown field` bare AND keyed), so it left the set.
+  const INT_MAP_FIELDS = new Set(["balance"]);
   // $like and $in measured (2026-08-10): rejected on bare map fields exactly
 // like $match, keyed forms accepted. $exists deliberately EXCLUDED: the bare
 // map field is the key-existence idiom and is accepted by the ledger.
@@ -164,6 +168,7 @@ const COMPARISONS = new Set([
           // key below, and it shipped in the gallery too.
           const fieldValue = (value as Record<string, unknown>)[field];
           if (
+            INT_MAP_FIELDS.has(base) &&
             typeof fieldValue === "string" &&
             /^-?\d+$/.test(fieldValue.trim())
           ) {
@@ -175,6 +180,11 @@ const COMPARISONS = new Set([
           if (!field.includes("[")) {
             console.error(
               `✗ ${file}: query "${queryName}" compares "${field}" with no key; it is a map type, so the ledger refuses this. Use a literal key, e.g. ${base}[USD/2]`
+            );
+            failures++;
+          } else if (!new RegExp(`^${base}\\[[^\\]]+\\]$`).test(field)) {
+            console.error(
+              `✗ ${file}: query "${queryName}" uses the malformed map access "${field}"; the shape is ${base}[key] with a non-empty key and nothing after the bracket`
             );
             failures++;
           } else if (/\$\{|\$[A-Za-z_]/.test(field)) {
