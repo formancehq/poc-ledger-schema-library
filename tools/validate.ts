@@ -143,6 +143,24 @@ for (const file of files) {
         for (const field of Object.keys(value as Record<string, unknown>)) {
           const base = field.split("[")[0]!;
           if (!MAP_FIELDS.has(base)) continue;
+          // Value polarity, measured live 2026-08-10 on the same ledger:
+          //   "balance[EUR/2]": "0"   -> 400 `expected a "${variable}" string
+          //                              or a plain value, got `0``
+          //   "balance[EUR/2]": 0     -> accepted
+          //   "balance[EUR/2]": "${v}" -> accepted
+          // So an int-typed field takes a NUMBER or a ${var} reference; a
+          // quoted numeric string is neither. Opposite polarity to the missing
+          // key below, and it shipped in the gallery too.
+          const fieldValue = (value as Record<string, unknown>)[field];
+          if (
+            typeof fieldValue === "string" &&
+            /^-?\d+$/.test(fieldValue.trim())
+          ) {
+            console.error(
+              `✗ ${file}: query "${queryName}" compares "${field}" with the quoted string "${fieldValue}"; an int-typed field needs a number (${fieldValue}) or a "\${var}" reference`
+            );
+            failures++;
+          }
           if (!field.includes("[")) {
             console.error(
               `✗ ${file}: query "${queryName}" compares "${field}" with no key; it is a map type, so the ledger refuses this. Use a literal key, e.g. ${base}[USD/2]`
