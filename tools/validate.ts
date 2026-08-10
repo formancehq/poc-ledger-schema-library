@@ -42,12 +42,19 @@ if (existsSync(DOCS_DIR)) {
 }
 
 const files = readdirSync(SCHEMAS_DIR).filter((f) => f.endsWith(".yaml"));
+// starter.yaml lives at the repo root, OUTSIDE schemas/, and feeds Studio's
+// "Start from scratch" seed via codegen. It shipped the quoted-numeric
+// balance defect precisely because this gate did not scan it (found by a
+// post-ship audit, 2026-08-10) — so it is linted with the same rules.
+const ROOT_STARTER = join(HERE, "..", "starter.yaml");
 const slugs = new Set<string>();
 const orders = new Map<number, string>();
 
-for (const file of files) {
+const worklist: Array<[string, string]> = files.map((f) => [f, join(SCHEMAS_DIR, f)]);
+if (existsSync(ROOT_STARTER)) worklist.push(["starter.yaml", ROOT_STARTER]);
+for (const [file, filePath] of worklist) {
   const slug = file.replace(/\.yaml$/, "");
-  const raw = readFileSync(join(SCHEMAS_DIR, file), "utf8");
+  const raw = readFileSync(filePath, "utf8");
   let data: unknown;
   try {
     data = yamlLoad(raw);
@@ -58,11 +65,17 @@ for (const file of files) {
   }
 
   const doc = data as { meta?: { slug?: string; order?: number; docsUrl?: string } };
-  if (doc?.meta?.slug !== slug) {
+  // starter.yaml is Studio's "Start from scratch" seed, not a gallery
+  // template: it has no meta block, no docs page, and no display order, so
+  // the template-meta invariants do not apply. Every CONTENT rule below
+  // (identifier casing, pragmas, filter bodies) still runs on it — that is
+  // the whole reason it is in the worklist.
+  const isStarter = file === "starter.yaml";
+  if (!isStarter && doc?.meta?.slug !== slug) {
     console.error(`✗ ${file}: meta.slug (${doc?.meta?.slug}) !== filename (${slug})`);
     failures++;
   }
-  if (slugs.has(slug)) {
+  if (!isStarter && slugs.has(slug)) {
     console.error(`✗ ${file}: duplicate slug`);
     failures++;
   }
