@@ -584,7 +584,7 @@ queries:
         - $match:
             metadata[pii_id]: "${pii_id}"
         - $gt:
-            balance[EUR/2]: "0"
+            balance[EUR/2]: 0
 
   OFFLINE_TRANSACTIONS:
     description: All offline transaction presentments
