@@ -117,6 +117,54 @@ for (const file of files) {
     }
   }
 
+  // Filter bodies: map-typed fields need a LITERAL key. Measured against a live
+  // v3.2 ledger (2026-08-10) by inserting three schema variants:
+  //
+  //   {"$match": {"balance": 0}}              -> 400 VALIDATION, "invalid value
+  //     `0` for type `map[string]int`: type cannot be constructed, you may need
+  //     to specify a key with `[my_key]`"
+  //   {"$match": {"balance[USD/2]": 0}}       -> accepted
+  //   {"$match": {"balance[${asset}]": 0}}    -> 400 VALIDATION, "invalid field
+  //     name" (so an asset-agnostic query CANNOT defer the asset to a var)
+  //
+  // This escaped to a production deployment because the manifest JSON Schema
+  // does not model filter-body types: the schema pushed fine and failed at
+  // v2InsertSchema mid-deploy. Hence a dedicated gate.
+  const MAP_FIELDS = new Set(["balance", "metadata", "volumes"]);
+  const COMPARISONS = new Set(["$match", "$gt", "$gte", "$lt", "$lte"]);
+  const walkFilter = (node: unknown, queryName: string): void => {
+    if (Array.isArray(node)) {
+      for (const item of node) walkFilter(item, queryName);
+      return;
+    }
+    if (typeof node !== "object" || node === null) return;
+    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+      if (COMPARISONS.has(key) && typeof value === "object" && value !== null) {
+        for (const field of Object.keys(value as Record<string, unknown>)) {
+          const base = field.split("[")[0]!;
+          if (!MAP_FIELDS.has(base)) continue;
+          if (!field.includes("[")) {
+            console.error(
+              `✗ ${file}: query "${queryName}" compares "${field}" with no key; it is a map type, so the ledger refuses this. Use a literal key, e.g. ${base}[USD/2]`
+            );
+            failures++;
+          } else if (/\$\{|\$[A-Za-z_]/.test(field)) {
+            console.error(
+              `✗ ${file}: query "${queryName}" uses a variable in the field name "${field}"; the ledger rejects that as an invalid field name. The key must be a literal`
+            );
+            failures++;
+          }
+        }
+      }
+      walkFilter(value, queryName);
+    }
+  };
+  for (const [queryName, query] of Object.entries(
+    (data as { queries?: Record<string, { body?: unknown }> }).queries ?? {}
+  )) {
+    walkFilter(query?.body, queryName);
+  }
+
   // Numscript feature pragmas, verified against the playground parser
   // (2026-08-07). Three ways this goes wrong silently:
   //

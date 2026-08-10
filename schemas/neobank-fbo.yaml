@@ -505,7 +505,7 @@ queries:
             address: customers::advances::outstanding
         - $not:
             $match:
-              balance: 0
+              balance[USD/2]: 0
   aging_advances:
     name: Aging advances
     description: >-
@@ -519,7 +519,7 @@ queries:
             address: customers::advances::outstanding
         - $not:
             $match:
-              balance: 0
+              balance[USD/2]: 0
   total_advance_exposure:
     name: Total advance exposure
     description: >-
@@ -542,7 +542,7 @@ queries:
             address: customers::withdrawals::pending
         - $not:
             $match:
-              balance: 0
+              balance[USD/2]: 0
   card_capture_volume:
     name: Card capture volume
     description: >-

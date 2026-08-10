@@ -549,7 +549,7 @@ queries:
             address: borrowers::plans::installments::principal:outstanding
         - $not:
             $match:
-              balance: 0
+              balance[USD/2]: 0
   charged_off_balances_outstanding:
     name: charged_off_balances_outstanding
     description: >-
@@ -562,7 +562,7 @@ queries:
             address: borrowers::plans::installments::principal:writtenOff
         - $not:
             $match:
-              balance: 0
+              balance[USD/2]: 0
   psp_collections_received_today:
     name: psp_collections_received_today
     description: >-

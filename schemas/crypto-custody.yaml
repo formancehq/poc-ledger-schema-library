@@ -496,16 +496,14 @@ queries:
   stuck_conversion_aging:
     name: Stuck conversion aging
     description: >-
-      Per-trade conversion accounts that hold a non-zero balance: a stranded leg
-      that needs a compensating entry.
+      Per-trade conversion accounts. A non-zero balance is a stranded leg that
+      needs a compensating entry. Lists every conversion account rather than
+      filtering: these accounts hold several assets, and a balance filter needs
+      one literal asset, so read the balances from the response.
     resource: accounts
     body:
-      $and:
-        - $match:
-            address: 'exchanges:conv:'
-        - $not:
-            $match:
-              balance: 0
+      $match:
+        address: 'exchanges:conv:'
   unattributed_deposit_suspense:
     name: Unattributed deposit suspense
     description: >-
